@@ -158,6 +158,36 @@
             }
           };
 
+          const handleQuickStatusChange = async (newStatus) => {
+            const updatedEquipo = { ...selectedEquipo, estatus: newStatus };
+            
+            // Si lo marcan fuera de servicio, pedir el motivo con una ventana emergente
+            if (newStatus === 'Fuera de Servicio') {
+                const motivo = window.prompt("Ingrese el motivo por el cual el equipo está fuera de servicio:");
+                if (motivo === null) return; // Si el usuario cancela, no hacemos nada
+                updatedEquipo.motivoFueraServicio = motivo;
+            } else {
+                updatedEquipo.motivoFueraServicio = ''; // Limpiamos si vuelve a estar en servicio
+            }
+
+            setSelectedEquipo(updatedEquipo);
+            setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
+
+            if (GOOGLE_SHEETS_WEBAPP_URL) {
+              try {
+                setIsSyncing(true);
+                await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
+                  method: 'POST',
+                  body: JSON.stringify({ action: 'edit', data: updatedEquipo, sheetName: updatedEquipo.origen, id: updatedEquipo.id })
+                });
+              } catch (error) {
+                console.error("Error al actualizar estatus:", error);
+              } finally {
+                setIsSyncing(false);
+              }
+            }
+          };
+
           // Función auxiliar para obtener el color del estatus (badge del ID)
           const getEstatusColor = (estatus) => {
             const status = estatus ? estatus.toLowerCase() : '';
@@ -308,11 +338,26 @@
                         <h2 className="text-3xl font-bold text-gray-800 mb-1">{selectedEquipo.nombre || 'Equipo sin nombre'}</h2>
                         <p className="text-gray-500 font-medium"><i className="fas fa-tag mr-2"></i>{selectedEquipo.tipoTecnologia || 'Sin categoría'}</p>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right flex flex-col items-end">
                         <span className={`px-4 py-2 rounded-lg border font-bold text-lg inline-block shadow-sm ${getEstatusColor(selectedEquipo.estatus)}`}>
                           {selectedEquipo.numeroInventario || 'Sin No. Inv'}
                         </span>
-                        <p className="text-sm font-bold mt-2 text-gray-500 uppercase tracking-widest">{selectedEquipo.estatus}</p>
+                        
+                        <div className="mt-3 flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm">
+                          <label className="text-xs font-bold text-gray-500 uppercase tracking-widest"><i className="fas fa-exchange-alt mr-1"></i> Estatus:</label>
+                          <select 
+                            value={selectedEquipo.estatus} 
+                            onChange={(e) => handleQuickStatusChange(e.target.value)}
+                            className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${
+                              selectedEquipo.estatus === 'Operativo' || selectedEquipo.estatus === 'En Servicio' ? 'text-emerald-700' : 
+                              selectedEquipo.estatus === 'En Mantenimiento' ? 'text-amber-700' : 'text-red-700'
+                            }`}
+                          >
+                            <option value="Operativo" className="text-emerald-700">En Servicio</option>
+                            <option value="En Mantenimiento" className="text-amber-700">En Mantenimiento</option>
+                            <option value="Fuera de Servicio" className="text-red-700">Fuera de Servicio</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
 
