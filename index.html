@@ -5,51 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MediCMMS - Mantenimiento</title>
     
+    <!-- React y ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        .tabla-calendario th, .tabla-calendario td {
-            border: 1px solid #1e3a8a;
+        /* Estilos de Impresión */
+        @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
+            @page { size: landscape; margin: 10mm; }
+            .print-hidden { display: none !important; }
+            .print-block { display: block !important; }
+            main { padding: 0 !important; margin: 0 !important; }
+            .bg-slate-50 { background-color: white !important; }
+            .shadow-sm { box-shadow: none !important; border: none !important; }
         }
-        .tabla-calendario th {
-            background-color: #60a5fa;
-            color: white;
-            font-weight: bold;
-            text-align: center;
-            vertical-align: middle;
-        }
-        .celda-programada {
-            background-color: #3b82f6 !important;
-            box-shadow: inset 0 0 5px rgba(0,0,0,0.2);
-        }
-        .celda-ejecutada {
-            background-color: #22c55e !important;
-            position: relative;
-        }
-        .celda-ejecutada::after {
-            content: '✓';
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-        }
-        .celda-interactiva {
-            min-width: 25px;
-            height: 25px;
-            text-align: center;
-            transition: all 0.2s;
-        }
-        .celda-interactiva:hover {
-            background-color: #bfdbfe;
-            cursor: pointer;
-        }
+        
+        /* Estilos del Calendario */
+        .tabla-cal th, .tabla-cal td { border: 1px solid #1e3a8a; }
+        .tabla-cal th { background-color: #60a5fa !important; color: white !important; font-weight: bold; text-align: center; }
+        .celda-prog { background-color: #3b82f6 !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
+        .celda-ejec { background-color: #22c55e !important; position: relative; }
+        .celda-ejec::after { content: '✓'; color: white; font-size: 14px; font-weight: bold; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        .celda-interactiva { min-width: 25px; height: 25px; text-align: center; cursor: pointer; transition: background-color 0.2s; }
+        .celda-interactiva:hover { background-color: #bfdbfe !important; }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -58,16 +46,27 @@
      <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
 
+        // ============================================================================
+        // CONFIGURACIÓN DE GOOGLE SHEETS
+        // ============================================================================
         const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwsPJJ9SQdgz3l8BEDMwpcOT0hYhrfLL3qIdTAYJ7q_Pji5ZBzu_Pt-zmvqcmtokVKi/exec"; 
 
-        const motivosOptions = ["PENDIENTE DE CALIBRACION", "EN MANTENIMIENTO PREVENTIVO", "EN REPARACION", "EN ESPERA DE REFACCIONES", "DAÑO SIN POSIBILIDAD DE REPARACION", "PRESTADO", "EN CAMBIO O SUSTITUCION", "BAJA DEFINITIVA"];
-        const frecuenciasOptions = [
-            { id: '', label: 'No aplica' }, { id: 'M', label: 'MENSUAL' }, { id: 'B', label: 'BIMESTRAL' },
-            { id: 'T', label: 'TRIMESTRAL' }, { id: 'C', label: 'CUATRIMESTRAL' }, { id: 'S', label: 'SEMESTRAL' }, { id: 'A', label: 'ANUAL' }
+        const motivosOptions = [
+            "PENDIENTE DE CALIBRACION", "EN MANTENIMIENTO PREVENTIVO", "EN REPARACION", 
+            "EN ESPERA DE REFACCIONES", "DAÑO SIN POSIBILIDAD DE REPARACION", "PRESTADO", 
+            "EN CAMBIO O SUSTITUCION", "BAJA DEFINITIVA"
         ];
+
+        const frecuenciasOptions = [
+            { id: '', label: 'No aplica / Sin definir' }, { id: 'M', label: 'M - MENSUAL' }, 
+            { id: 'B', label: 'B - BIMESTRAL' }, { id: 'T', label: 'T - TRIMESTRAL' }, 
+            { id: 'C', label: 'C - CUATRIMESTRAL' }, { id: 'S', label: 'S - SEMESTRAL' }, 
+            { id: 'A', label: 'A - ANUAL' }
+        ];
+
         const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
-        // CALCULO PROYECCIONES
+        // LÓGICA DE PROYECCIONES
         const calcularProximoMantenimiento = (fechaUltimo, frecuencia) => {
             if (!fechaUltimo || !frecuencia) return '';
             const [yearStr, monthStr] = fechaUltimo.split('-');
@@ -90,7 +89,6 @@
 
             let startMonth = uMonth - 1; 
             let startYear = uYear;
-
             while (startYear >= targetYear && interval > 0) {
                 startMonth -= interval;
                 while (startMonth < 0) { startMonth += 12; startYear -= 1; }
@@ -107,12 +105,10 @@
             return mesesProgramados;
         };
 
-        // EVALUACIÓN DE CUMPLIMIENTO CON HOLGURA ±1 MES
+        // LÓGICA DE CUMPLIMIENTO CON ±1 MES DE HOLGURA
         const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
             if (!historialEjecuciones) return false;
-            const ejecutados = historialEjecuciones.toString().split(',').map(s => s.trim());
-            
-            // Calculamos mes actual, anterior y siguiente
+            const ejecutados = historialEjecuciones.split(',');
             const formatYM = (y, m) => `${y}-${(m + 1).toString().padStart(2, '0')}`;
             
             let pMonth = targetMonthIndex - 1, pYear = targetYear;
@@ -121,15 +117,13 @@
             let nMonth = targetMonthIndex + 1, nYear = targetYear;
             if (nMonth > 11) { nMonth = 0; nYear++; }
 
-            const mActual = formatYM(targetYear, targetMonthIndex);
-            const mPrevio = formatYM(pYear, pMonth);
-            const mSiguiente = formatYM(nYear, nMonth);
-
-            return ejecutados.includes(mActual) || ejecutados.includes(mPrevio) || ejecutados.includes(mSiguiente);
+            return ejecutados.includes(formatYM(targetYear, targetMonthIndex)) || 
+                   ejecutados.includes(formatYM(pYear, pMonth)) || 
+                   ejecutados.includes(formatYM(nYear, nMonth));
         };
 
         const CMMSHospitalario = () => {
-          const [activeTab, setActiveTab] = useState('dashboard');
+          const [activeTab, setActiveTab] = useState('calendarios');
           const [inventarioTab, setInventarioTab] = useState('Propio');
           const [equipos, setEquipos] = useState([]);
           const [isSyncing, setIsSyncing] = useState(false);
@@ -138,6 +132,7 @@
           const [searchTerm, setSearchTerm] = useState('');
           const [filterEstatus, setFilterEstatus] = useState('Todos');
           const [filterUbicacionCal, setFilterUbicacionCal] = useState('Todas');
+          const [filterMesCal, setFilterMesCal] = useState('Todos');
           const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
           const [dashYear, setDashYear] = useState(new Date().getFullYear());
 
@@ -150,13 +145,13 @@
             motivoFueraServicio: '', nombre: '', marca: '', polizaMantenimiento: 'No', modelo: '',
             numeroSerie: '', fabricante: '', nivelRiesgo: 'I', ubicacion: '', fechaAlta: '',
             proveedorMantenimiento: '', descripcion: '', tipoTecnologia: 'Equipo Médico',
-            frecuenciaMantenimiento: '', ultimoMantenimiento: '', proximoMantenimiento: '',
-            historialEjecuciones: ''
+            frecuenciaMantenimiento: '', ultimoMantenimiento: '', proximoMantenimiento: '', historialEjecuciones: ''
           };
           const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
 
           useEffect(() => { handleSyncSheets(); }, []);
 
+          // Stats para el Dashboard
           const stats = useMemo(() => {
             return {
               total: equipos.length,
@@ -166,6 +161,23 @@
               criticos: equipos.filter(e => e.estatus === 'Fuera de Servicio').length,
             };
           }, [equipos]);
+
+          // Data para Cumplimiento Mensual (Dashboard)
+          const monthlyCompliance = useMemo(() => {
+              return mesesAbreviados.map((nombreMes, monthIndex) => {
+                  let programados = 0;
+                  let cumplidos = 0;
+                  equipos.forEach(equipo => {
+                      const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, dashYear);
+                      if (mesesProgramados.has(monthIndex)) {
+                          programados++;
+                          if (verificarCumplimiento(equipo.historialEjecuciones, monthIndex, dashYear)) cumplidos++;
+                      }
+                  });
+                  const pct = programados === 0 ? 100 : Math.round((cumplidos / programados) * 100);
+                  return { mes: nombreMes, programados, cumplidos, pct };
+              });
+          }, [equipos, dashYear]);
 
           const equiposFiltrados = useMemo(() => {
             return equipos.filter(e => {
@@ -190,32 +202,19 @@
           const equiposCalendario = useMemo(() => {
               return equipos.filter(e => {
                   if (e.origen !== inventarioTab) return false;
-                  if (filterUbicacionCal === 'Todas') return true;
-                  return e.ubicacion === filterUbicacionCal;
+                  if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
+                  
+                  // Nuevo Filtro de Mes
+                  if (filterMesCal !== 'Todos') {
+                      const monthIdx = parseInt(filterMesCal, 10);
+                      const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
+                      if (!programados.has(monthIdx)) return false;
+                  }
+                  return true;
               });
-          }, [equipos, inventarioTab, filterUbicacionCal]);
+          }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, calendarYear]);
 
-          // DATA PARA DASHBOARD - CUMPLIMIENTO MENSUAL
-          const monthlyCompliance = useMemo(() => {
-              return mesesAbreviados.map((nombreMes, monthIndex) => {
-                  let programados = 0;
-                  let cumplidos = 0;
-
-                  equipos.forEach(equipo => {
-                      const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, dashYear);
-                      if (mesesProgramados.has(monthIndex)) {
-                          programados++;
-                          if (verificarCumplimiento(equipo.historialEjecuciones, monthIndex, dashYear)) {
-                              cumplidos++;
-                          }
-                      }
-                  });
-
-                  const pct = programados === 0 ? 100 : Math.round((cumplidos / programados) * 100);
-                  return { mes: nombreMes, programados, cumplidos, pct };
-              });
-          }, [equipos, dashYear]);
-
+          // Sincronización Google Sheets
           const handleSyncSheets = async () => {
             setIsSyncing(true);
             if (!GOOGLE_SHEETS_WEBAPP_URL) { setTimeout(() => setIsSyncing(false), 1000); return; }
@@ -223,27 +222,21 @@
               const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`);
               const data = await response.json();
               
-              // Filtro inteligente: Elimina filas vacías y crea un ID 100% único por cada hoja
               const procesarHoja = (arr, origen) => {
-                  return (arr || [])
-                    .filter(e => e.numeroInventario || e.nombre) // Ignora filas fantasma
-                    .map(e => ({...e, origen, id: `${origen}-${e.id}`})); // ID Único
+                  return (arr || []).filter(e => e.numeroInventario || e.nombre).map(e => ({...e, origen, id: `${origen}-${e.id}`}));
               };
 
-              const equiposSheets = [
+              setEquipos([
                 ...procesarHoja(data.propio, 'Propio'),
                 ...procesarHoja(data.comodato, 'Comodato'),
                 ...procesarHoja(data.renta, 'Renta')
-              ];
-              
-              setEquipos(equiposSheets);
+              ]);
             } catch (error) { console.error(error); } finally { setIsSyncing(false); }
           };
 
           const directSaveToSheets = async (equipo) => {
              if (GOOGLE_SHEETS_WEBAPP_URL) {
               try {
-                // Notificamos inicio pero no bloqueamos la UI pesadamente
                 setIsSyncing(true);
                 await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
                   method: 'POST',
@@ -280,65 +273,28 @@
             setNuevoEquipo(estadoInicialEquipo);
           };
 
-          // ACCIÓN: Clic en el calendario marca palomita guardando directamente el string en Sheets
+          // Clic Interactivo en el Calendario
           const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
               const strY = year.toString();
               const strM = (monthIndex + 1).toString().padStart(2, '0');
-              const targetStr = `${strY}-${strM}`; // Ejemplo: "2026-04"
+              const targetStr = `${strY}-${strM}`;
 
-              // Convertimos el historial existente (string) a arreglo
-              let historialArr = equipo.historialEjecuciones ? equipo.historialEjecuciones.toString().split(',').map(s => s.trim()).filter(Boolean) : [];
-              
+              let historialArr = equipo.historialEjecuciones ? equipo.historialEjecuciones.split(',') : [];
               if (historialArr.includes(targetStr)) {
-                  // Si ya estaba, lo quitamos
                   historialArr = historialArr.filter(h => h !== targetStr);
               } else {
-                  // Si no estaba, lo agregamos
                   historialArr.push(targetStr);
               }
 
-              // Creamos el equipo actualizado con el nuevo string separado por comas
               const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
-              
-              // Actualizamos interfaz
               setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
-              
-              // Guardamos en Google Sheets
               directSaveToSheets(updatedEquipo);
-          };
-
-          const handleQuickStatusChange = (newStatus) => {
-            const updatedEquipo = { ...selectedEquipo, estatus: newStatus };
-            if (newStatus === 'En Servicio') { updatedEquipo.motivoFueraServicio = ''; } 
-            else if (!updatedEquipo.motivoFueraServicio) { updatedEquipo.motivoFueraServicio = motivosOptions[0]; }
-            setSelectedEquipo(updatedEquipo);
-            setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
-            directSaveToSheets(updatedEquipo);
-          };
-
-          const handleQuickMotivoChange = (newMotivo) => {
-            const updatedEquipo = { ...selectedEquipo, motivoFueraServicio: newMotivo };
-            setSelectedEquipo(updatedEquipo);
-            setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
-            directSaveToSheets(updatedEquipo);
-          };
-
-          const handleNewEquipoMantenimientoChange = (field, value) => {
-              const updated = { ...nuevoEquipo, [field]: value };
-              updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, updated.frecuenciaMantenimiento);
-              setNuevoEquipo(updated);
-          };
-
-          const handleEditEquipoMantenimientoChange = (field, value) => {
-              const updated = { ...equipoEditado, [field]: value };
-              updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, updated.frecuenciaMantenimiento);
-              setEquipoEditado(updated);
           };
 
           const getEstatusColor = (estatus) => {
             const status = estatus ? estatus.toLowerCase() : '';
             if (status.includes('servicio') && !status.includes('fuera')) return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-            else if (status.includes('fuera de servicio')) return 'bg-red-100 text-red-800 border-red-300';
+            if (status.includes('fuera de servicio')) return 'bg-red-100 text-red-800 border-red-300';
             return 'bg-gray-100 text-gray-800 border-gray-300'; 
           };
 
@@ -350,55 +306,41 @@
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                  <i className="fas fa-chart-line text-blue-600"></i> Panel de Control
+                  <i className="fas fa-columns text-blue-600"></i> Panel de Control
                 </h2>
                 <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg hover:bg-emerald-200 transition font-medium text-sm">
                   <i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i>
-                  {isSyncing ? 'Sincronizando...' : 'Sincronizar Datos'}
+                  {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}
                 </button>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500 font-medium">Equipo Propio</p>
-                    <p className="text-3xl font-bold text-blue-600">{stats.propios}</p>
-                  </div>
+                  <div><p className="text-sm text-gray-500 font-medium">Equipo Propio</p><p className="text-3xl font-bold text-blue-600">{stats.propios}</p></div>
                   <div className="bg-blue-100 p-3 rounded-lg text-blue-600"><i className="fas fa-database text-2xl"></i></div>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500 font-medium">En Comodato</p>
-                    <p className="text-3xl font-bold text-purple-600">{stats.comodato}</p>
-                  </div>
+                  <div><p className="text-sm text-gray-500 font-medium">En Comodato</p><p className="text-3xl font-bold text-purple-600">{stats.comodato}</p></div>
                   <div className="bg-purple-100 p-3 rounded-lg text-purple-600"><i className="fas fa-server text-2xl"></i></div>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500 font-medium">En Renta</p>
-                    <p className="text-3xl font-bold text-amber-500">{stats.renta}</p>
-                  </div>
+                  <div><p className="text-sm text-gray-500 font-medium">En Renta</p><p className="text-3xl font-bold text-amber-500">{stats.renta}</p></div>
                   <div className="bg-amber-100 p-3 rounded-lg text-amber-600"><i className="fas fa-heartbeat text-2xl"></i></div>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500 font-medium">Fuera de Servicio</p>
-                    <p className="text-3xl font-bold text-red-500">{stats.criticos}</p>
-                  </div>
+                  <div><p className="text-sm text-gray-500 font-medium">Fuera de Servicio</p><p className="text-3xl font-bold text-red-500">{stats.criticos}</p></div>
                   <div className="bg-red-100 p-3 rounded-lg text-red-600"><i className="fas fa-exclamation-triangle text-2xl"></i></div>
                 </div>
               </div>
 
-              {/* DASHBOARD: INDICADORES DE CUMPLIMIENTO */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mt-6">
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-bold text-gray-800"><i className="fas fa-clipboard-check text-blue-600 mr-2"></i> Cumplimiento Mensual (Tolerancia ±1 Mes)</h3>
+                    <h3 className="text-lg font-bold text-gray-800 flex items-center"><i className="fas fa-clipboard-check text-blue-600 mr-2"></i> Cumplimiento Mensual (Tolerancia ±1 Mes)</h3>
                     <div className="flex items-center gap-2">
                         <label className="text-sm font-bold text-gray-500">AÑO:</label>
                         <input type="number" value={dashYear} onChange={(e) => setDashYear(parseInt(e.target.value))} className="w-20 p-1 text-center border border-gray-300 rounded text-sm font-bold" />
                     </div>
                 </div>
-                
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                     {monthlyCompliance.map(mesData => (
                         <div key={mesData.mes} className={`border rounded-lg p-3 text-center transition-colors ${mesData.programados === 0 ? 'bg-gray-50 border-gray-200 opacity-60' : 'bg-white border-gray-200 shadow-sm'}`}>
@@ -409,8 +351,8 @@
                                 </span>
                             </div>
                             <div className="text-xs text-gray-500 flex justify-center gap-2 font-medium">
-                                <span title="Cumplidos" className="text-emerald-600"><i className="fas fa-check"></i> {mesData.cumplidos}</span>
-                                <span title="Programados" className="text-blue-600"><i className="fas fa-wrench"></i> {mesData.programados}</span>
+                                <span title="Cumplidos" className="text-emerald-600 font-bold"><i className="fas fa-check"></i> {mesData.cumplidos}</span>
+                                <span title="Programados" className="text-blue-600 font-bold"><i className="fas fa-wrench"></i> {mesData.programados}</span>
                             </div>
                         </div>
                     ))}
@@ -421,38 +363,60 @@
 
           const renderCalendarios = () => (
               <div className="space-y-6 animate-in fade-in duration-300">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print-hidden">
                       <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                         <i className="far fa-calendar-alt text-blue-600"></i> Calendario de Mantenimiento Preventivo
                       </h2>
-                      <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm">
-                        <i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> 
-                        {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}
-                      </button>
+                      <div className="flex gap-2">
+                          <button onClick={() => window.print()} className="flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition shadow-sm font-medium text-sm">
+                            <i className="fas fa-print"></i> Imprimir
+                          </button>
+                          <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm">
+                            <i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}
+                          </button>
+                      </div>
                   </div>
 
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                      <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto">
-                        <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
-                        <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
-                        <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="area-impresion">
+                      <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto print-hidden">
+                        <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500'}`}>Hoja 1: Equipo Propio</button>
+                        <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500'}`}>Hoja 2: Comodato</button>
+                        <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500'}`}>Hoja 3: Renta</button>
                       </div>
 
-                      <div className="bg-white p-4 border-b border-gray-100 flex flex-wrap items-center gap-4">
+                      <div className="p-4 border-b border-gray-100 bg-white flex flex-wrap items-center gap-4 print-hidden">
                           <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i> Filtrar por Área:</label>
-                              <select value={filterUbicacionCal} onChange={(e) => setFilterUbicacionCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i> Filtro Área:</label>
+                              <select value={filterUbicacionCal} onChange={(e) => setFilterUbicacionCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
                                   {ubicacionesUnicas.map(ub => <option key={ub} value={ub}>{ub}</option>)}
                               </select>
                           </div>
+                          <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter mr-1"></i> Mes:</label>
+                              <select value={filterMesCal} onChange={(e) => setFilterMesCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                                  <option value="Todos">Todos los meses</option>
+                                  {mesesAbreviados.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                              </select>
+                          </div>
                           <div className="flex items-center gap-2">
-                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="far fa-calendar mr-1"></i> Año:</label>
+                              <label className="text-xs font-bold text-gray-500 uppercase">Año:</label>
                               <input type="number" value={calendarYear} onChange={(e) => setCalendarYear(parseInt(e.target.value))} className="w-24 py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none text-center font-bold" />
                           </div>
                       </div>
 
-                      <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse tabla-calendario text-xs whitespace-nowrap">
+                      {/* Cabecera Exclusiva para la Impresión */}
+                      <div className="hidden print-block p-6 text-center border-b border-gray-200">
+                          <h2 className="text-3xl font-bold text-gray-800 mb-2">Calendario de Mantenimiento Preventivo</h2>
+                          <p className="text-gray-600 text-lg">
+                              Año: <strong>{calendarYear}</strong> | 
+                              Categoría: <strong>{inventarioTab}</strong> | 
+                              Área: <strong>{filterUbicacionCal}</strong>
+                              {filterMesCal !== 'Todos' && <span> | Mes Programado: <strong>{mesesAbreviados[parseInt(filterMesCal)]}</strong></span>}
+                          </p>
+                      </div>
+
+                      <div className="overflow-x-auto p-4">
+                          <table className="w-full text-left border-collapse tabla-cal text-xs whitespace-nowrap">
                               <thead>
                                   <tr>
                                       <th className="p-2 w-24">Control</th>
@@ -461,13 +425,12 @@
                                       <th className="p-2">Modelo</th>
                                       <th className="p-2">Serie</th>
                                       <th className="p-2">Ubicación</th>
-                                      <th className="p-2">Contrato</th>
-                                      {mesesAbreviados.map(mes => <th key={mes} className="p-1 w-8" style={{writingMode: 'vertical-rl', transform: 'rotate(180deg)', paddingBottom: '10px'}}>{mes}</th>)}
+                                      {mesesAbreviados.map(mes => <th key={mes} className="p-1 w-8 uppercase" style={{writingMode: 'vertical-rl', transform: 'rotate(180deg)', paddingBottom: '10px'}}>{mes}</th>)}
                                   </tr>
                               </thead>
                               <tbody>
                                   {equiposCalendario.length === 0 ? (
-                                      <tr><td colSpan="19" className="p-8 text-center text-gray-500 border border-blue-800">No hay equipos en el área y hoja seleccionada.</td></tr>
+                                      <tr><td colSpan="18" className="p-8 text-center text-gray-500 border border-blue-800">No hay equipos que cumplan con estos filtros.</td></tr>
                                   ) : (
                                       equiposCalendario.map((equipo) => {
                                           const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, calendarYear);
@@ -476,14 +439,12 @@
                                           const celdas = [0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
                                               const strY = calendarYear.toString();
                                               const strM = (monthIndex + 1).toString().padStart(2, '0');
-                                              const targetStr = `${strY}-${strM}`;
-                                              
-                                              const isEjecutado = historialString.includes(targetStr);
+                                              const isEjecutado = historialString.includes(`${strY}-${strM}`);
                                               const isProgramado = mesesProgramados.has(monthIndex);
-
+                                              
                                               let cellClass = "p-1 border border-blue-800 celda-interactiva ";
-                                              if (isEjecutado) cellClass += "celda-ejecutada ";
-                                              else if (isProgramado) cellClass += "celda-programada ";
+                                              if (isEjecutado) cellClass += "celda-ejec ";
+                                              else if (isProgramado) cellClass += "celda-prog ";
                                               else cellClass += "bg-white ";
 
                                               return (
@@ -504,7 +465,6 @@
                                                   <td className="p-2 text-gray-600 border border-blue-800">{equipo.modelo || '-'}</td>
                                                   <td className="p-2 text-gray-600 font-mono border border-blue-800">{equipo.numeroSerie || '-'}</td>
                                                   <td className="p-2 text-gray-600 border border-blue-800">{equipo.ubicacion || '-'}</td>
-                                                  <td className="p-2 text-gray-600 border border-blue-800">{equipo.proveedorMantenimiento || 'N/A'}</td>
                                                   {celdas}
                                               </tr>
                                           )
@@ -514,10 +474,10 @@
                           </table>
                       </div>
                       
-                      <div className="p-4 bg-blue-50 border-t border-blue-100 flex gap-6 text-xs items-center font-medium">
+                      <div className="p-4 bg-blue-50 border-t border-blue-100 flex gap-6 text-xs items-center font-medium print-hidden">
                           <span className="font-bold text-blue-900 uppercase tracking-widest"><i className="fas fa-info-circle mr-1"></i> Leyenda Visual:</span>
-                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-blue-500 shadow-inner border border-blue-600"></div> <span className="text-gray-700">Mantenimiento Programado</span></div>
-                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-green-500 border border-green-600 flex items-center justify-center text-white text-[10px] font-bold">✓</div> <span className="text-gray-700">Mantenimiento Ejecutado (Clic)</span></div>
+                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-blue-500 shadow-inner border border-blue-600"></div> <span className="text-gray-700">Programado</span></div>
+                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-green-500 border border-green-600 flex items-center justify-center text-white text-[10px] font-bold">✓</div> <span className="text-gray-700">Ejecutado (Clic)</span></div>
                       </div>
                   </div>
               </div>
@@ -575,16 +535,24 @@
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div>
                                   <label className="block text-xs font-bold text-gray-700 mb-1">Frecuencia</label>
-                                  <select value={equipoEditado.frecuenciaMantenimiento} onChange={(e) => handleEditEquipoMantenimientoChange('frecuenciaMantenimiento', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                  <select value={equipoEditado.frecuenciaMantenimiento} onChange={(e) => {
+                                      const updated = {...equipoEditado, frecuenciaMantenimiento: e.target.value};
+                                      updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, e.target.value);
+                                      setEquipoEditado(updated);
+                                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
                                     {frecuenciasOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                                   </select>
                               </div>
                               <div>
                                   <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año del Último Servicio (Base)</label>
-                                  <input type="month" value={equipoEditado.ultimoMantenimiento} onChange={(e) => handleEditEquipoMantenimientoChange('ultimoMantenimiento', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                  <input type="month" value={equipoEditado.ultimoMantenimiento} onChange={(e) => {
+                                      const updated = {...equipoEditado, ultimoMantenimiento: e.target.value};
+                                      updated.proximoMantenimiento = calcularProximoMantenimiento(e.target.value, updated.frecuenciaMantenimiento);
+                                      setEquipoEditado(updated);
+                                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                               </div>
                               <div>
-                                  <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Próximo (Proyección)</label>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Próximo (Calculado)</label>
                                   <input type="month" value={equipoEditado.proximoMantenimiento} readOnly className="w-full px-3 py-2 border border-blue-200 bg-blue-50 text-blue-800 font-bold rounded-lg text-sm cursor-not-allowed" />
                               </div>
                           </div>
@@ -669,7 +637,14 @@
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest"><i className="fas fa-exchange-alt mr-1"></i> Estatus:</label>
                             <select 
                               value={selectedEquipo.estatus} 
-                              onChange={(e) => handleQuickStatusChange(e.target.value)}
+                              onChange={(e) => {
+                                  const updated = { ...selectedEquipo, estatus: e.target.value };
+                                  if (e.target.value === 'En Servicio') updated.motivoFueraServicio = '';
+                                  else updated.motivoFueraServicio = motivosOptions[0];
+                                  setSelectedEquipo(updated);
+                                  setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+                                  directSaveToSheets(updated);
+                              }}
                               className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${
                                 selectedEquipo.estatus === 'En Servicio' ? 'text-emerald-700' : 'text-red-700'
                               }`}
@@ -684,7 +659,12 @@
                               <label className="text-[10px] font-bold text-red-500 uppercase">Motivo:</label>
                               <select 
                                 value={selectedEquipo.motivoFueraServicio || ''} 
-                                onChange={(e) => handleQuickMotivoChange(e.target.value)}
+                                onChange={(e) => {
+                                    const updated = { ...selectedEquipo, motivoFueraServicio: e.target.value };
+                                    setSelectedEquipo(updated);
+                                    setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+                                    directSaveToSheets(updated);
+                                }}
                                 className="text-xs font-medium border border-red-200 rounded p-1.5 text-red-700 bg-red-50 w-full outline-none"
                               >
                                 <option value="" disabled>Seleccione un motivo...</option>
@@ -757,7 +737,7 @@
               <div className="space-y-6 animate-in fade-in duration-300">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                    <i className="fas fa-clipboard-list text-blue-600"></i> Hojas de Inventario
+                    <i className="fas fa-stethoscope text-blue-600"></i> Hojas de Inventario
                   </h2>
                   
                   <div className="flex flex-wrap items-center gap-2">
@@ -848,7 +828,7 @@
 
           return (
             <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans">
-              <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10 md:min-h-screen">
+              <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10 md:min-h-screen print-hidden">
                 <div className="p-6 border-b border-slate-800 flex items-center gap-3">
                   <div className="bg-blue-500 p-2 rounded-lg w-10 h-10 flex items-center justify-center"><i className="fas fa-thermometer-half text-white text-xl"></i></div>
                   <div>
@@ -867,9 +847,6 @@
                   <button onClick={() => {setActiveTab('calendarios'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'calendarios' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
                     <i className="far fa-calendar-alt w-5 text-center"></i> Calendarios
                   </button>
-                  <button onClick={() => {setActiveTab('tareas'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'tareas' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
-                    <i className="fas fa-clipboard-list w-5 text-center"></i> Órdenes de Trabajo
-                  </button>
                 </nav>
               </aside>
 
@@ -878,122 +855,8 @@
                   {activeTab === 'dashboard' && renderDashboard()}
                   {activeTab === 'equipos' && renderEquipos()}
                   {activeTab === 'calendarios' && renderCalendarios()}
-                  {activeTab === 'tareas' && (
-                    <div className="bg-white p-8 rounded-xl text-center shadow-sm border border-gray-100 animate-in fade-in duration-300">
-                       <h3 className="text-xl font-bold text-gray-800 mb-2">Órdenes de Trabajo</h3>
-                       <p className="text-gray-500">Módulo en construcción para integración con calendario.</p>
-                    </div>
-                  )}
                 </div>
               </main>
-
-              {/* Modal Agregar Equipo */}
-              {showAddEquipo && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                  <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-blue-50">
-                      <div>
-                        <h3 className="text-lg font-bold text-gray-800">Registrar Nuevo Equipo</h3>
-                        <p className="text-xs text-blue-600 font-medium mt-1 flex items-center gap-1">
-                          <i className="fas fa-database"></i> Se guardará en la hoja: <strong>{nuevoEquipo.origen}</strong>
-                        </p>
-                      </div>
-                      <button onClick={() => setShowAddEquipo(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
-                    </div>
-                    
-                    <form onSubmit={handleAddEquipo} className="p-6 overflow-y-auto flex-1">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div className="lg:col-span-3 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
-                          <label className="block text-xs font-bold text-blue-800 mb-1">¿A qué hoja de cálculo pertenece este registro?</label>
-                          <select value={nuevoEquipo.origen} onChange={(e) => setNuevoEquipo({...nuevoEquipo, origen: e.target.value})} className="w-full md:w-1/3 px-3 py-2 border border-blue-200 rounded-lg text-sm font-medium text-blue-900 bg-white">
-                            <option value="Propio">Hoja: Equipo Propio</option>
-                            <option value="Comodato">Hoja: Equipo en Comodato</option>
-                            <option value="Renta">Hoja: Equipo en Renta</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 mb-1">Núm. de Inventario Interno *</label>
-                          <input required type="text" value={nuevoEquipo.numeroInventario} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroInventario: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej. INV-1234" />
-                        </div>
-                        <div className="lg:col-span-2">
-                          <label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label>
-                          <input required type="text" value={nuevoEquipo.nombre} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label>
-                          <select value={nuevoEquipo.tipoTecnologia} onChange={(e) => setNuevoEquipo({...nuevoEquipo, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                            <option value="Equipo Médico">Equipo Médico</option>
-                            <option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option>
-                            <option value="Infraestructura">Infraestructura</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label>
-                          <select required value={nuevoEquipo.estatus} onChange={(e) => setNuevoEquipo({...nuevoEquipo, estatus: e.target.value, motivoFueraServicio: e.target.value === 'En Servicio' ? '' : motivosOptions[0]})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                            <option value="En Servicio">En Servicio</option>
-                            <option value="Fuera de Servicio">Fuera de Servicio</option>
-                          </select>
-                        </div>
-
-                        {nuevoEquipo.estatus === 'Fuera de Servicio' && (
-                          <div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2">
-                            <label className="block text-xs font-bold text-red-600 mb-1">Seleccione el motivo de "Fuera de Servicio"</label>
-                            <select value={nuevoEquipo.motivoFueraServicio} onChange={(e) => setNuevoEquipo({...nuevoEquipo, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">
-                              {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
-                          </div>
-                        )}
-
-                        <div className="lg:col-span-3 border-t border-gray-200 my-2 pt-4">
-                            <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Configuración de Mantenimiento Preventivo</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 mb-1">Frecuencia</label>
-                                    <select value={nuevoEquipo.frecuenciaMantenimiento} onChange={(e) => handleNewEquipoMantenimientoChange('frecuenciaMantenimiento', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                                      {frecuenciasOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año del Último Servicio</label>
-                                    <input type="month" value={nuevoEquipo.ultimoMantenimiento} onChange={(e) => handleNewEquipoMantenimientoChange('ultimoMantenimiento', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Próximo (Calculado)</label>
-                                    <input type="month" value={nuevoEquipo.proximoMantenimiento} readOnly className="w-full px-3 py-2 border border-blue-200 bg-blue-50 text-blue-800 font-bold rounded-lg text-sm cursor-not-allowed" />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Marca</label><input type="text" value={nuevoEquipo.marca} onChange={(e) => setNuevoEquipo({...nuevoEquipo, marca: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Modelo o Versión</label><input type="text" value={nuevoEquipo.modelo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, modelo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={nuevoEquipo.numeroSerie} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={nuevoEquipo.fabricante} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={nuevoEquipo.ubicacion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo Vigente?</label>
-                          <select value={nuevoEquipo.polizaMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                            <option value="Sí">Sí</option><option value="No">No</option>
-                          </select>
-                        </div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={nuevoEquipo.nivelRiesgo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor de Mantenimiento</label><input type="text" value={nuevoEquipo.proveedorMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={nuevoEquipo.fechaAlta} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div className="lg:col-span-3">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Descripción del Equipo</label>
-                          <textarea value={nuevoEquipo.descripcion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea>
-                        </div>
-                      </div>
-                      <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
-                        <button type="button" onClick={() => setShowAddEquipo(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
-                        <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
-                          {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>}
-                          {isSyncing ? 'Guardando en Sheets...' : 'Guardar y Sincronizar'}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
             </div>
           );
         };
