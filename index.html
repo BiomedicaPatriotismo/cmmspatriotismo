@@ -105,10 +105,19 @@
             return mesesProgramados;
         };
 
+        // NUEVA FUNCIÓN SANADORA: Extrae solo el formato AÑO-MES (YYYY-MM) de cualquier celda corrupta
+        const limpiarHistorial = (str) => {
+            if (!str) return [];
+            return String(str).split(',').map(s => {
+                const match = s.match(/(\d{4})-(\d{2})/);
+                return match ? match[0] : null;
+            }).filter(Boolean);
+        };
+
         // LÓGICA DE CUMPLIMIENTO CON ±1 MES DE HOLGURA
         const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
             if (!historialEjecuciones) return false;
-            const ejecutados = historialEjecuciones.split(',');
+            const ejecutados = limpiarHistorial(historialEjecuciones);
             const formatYM = (y, m) => `${y}-${(m + 1).toString().padStart(2, '0')}`;
             
             let pMonth = targetMonthIndex - 1, pYear = targetYear;
@@ -279,12 +288,16 @@
               const strM = (monthIndex + 1).toString().padStart(2, '0');
               const targetStr = `${strY}-${strM}`;
 
-              let historialArr = equipo.historialEjecuciones ? equipo.historialEjecuciones.split(',') : [];
+              let historialArr = limpiarHistorial(equipo.historialEjecuciones);
+              
               if (historialArr.includes(targetStr)) {
                   historialArr = historialArr.filter(h => h !== targetStr);
               } else {
                   historialArr.push(targetStr);
               }
+
+              // Eliminar duplicados si los hubiera por el cruce de datos
+              historialArr = [...new Set(historialArr)];
 
               const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
               setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
@@ -435,11 +448,14 @@
                                       equiposCalendario.map((equipo) => {
                                           const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, calendarYear);
                                           const historialString = equipo.historialEjecuciones || "";
+                                          const ejecutadosArr = limpiarHistorial(historialString);
 
                                           const celdas = [0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
                                               const strY = calendarYear.toString();
                                               const strM = (monthIndex + 1).toString().padStart(2, '0');
-                                              const isEjecutado = historialString.includes(`${strY}-${strM}`);
+                                              const targetStr = `${strY}-${strM}`;
+                                              
+                                              const isEjecutado = ejecutadosArr.includes(targetStr);
                                               const isProgramado = mesesProgramados.has(monthIndex);
                                               
                                               let cellClass = "p-1 border border-blue-800 celda-interactiva ";
