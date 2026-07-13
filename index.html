@@ -50,10 +50,6 @@
             background-color: #bfdbfe;
             cursor: pointer;
         }
-        /* Para celdas que están marcadas como ejecutadas pero no estaban programadas ese mes */
-        .celda-ejecutada-extra {
-            background-color: #a7f3d0 !important;
-        }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -114,7 +110,7 @@
         // EVALUACIÓN DE CUMPLIMIENTO CON HOLGURA ±1 MES
         const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
             if (!historialEjecuciones) return false;
-            const ejecutados = historialEjecuciones.split(',');
+            const ejecutados = historialEjecuciones.toString().split(',').map(s => s.trim());
             
             // Calculamos mes actual, anterior y siguiente
             const formatYM = (y, m) => `${y}-${(m + 1).toString().padStart(2, '0')}`;
@@ -226,11 +222,20 @@
             try {
               const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`);
               const data = await response.json();
+              
+              // Filtro inteligente: Elimina filas vacías y crea un ID 100% único por cada hoja
+              const procesarHoja = (arr, origen) => {
+                  return (arr || [])
+                    .filter(e => e.numeroInventario || e.nombre) // Ignora filas fantasma
+                    .map(e => ({...e, origen, id: `${origen}-${e.id}`})); // ID Único
+              };
+
               const equiposSheets = [
-                ...data.propio.map(e => ({...e, origen: 'Propio'})),
-                ...data.comodato.map(e => ({...e, origen: 'Comodato'})),
-                ...data.renta.map(e => ({...e, origen: 'Renta'})),
+                ...procesarHoja(data.propio, 'Propio'),
+                ...procesarHoja(data.comodato, 'Comodato'),
+                ...procesarHoja(data.renta, 'Renta')
               ];
+              
               setEquipos(equiposSheets);
             } catch (error) { console.error(error); } finally { setIsSyncing(false); }
           };
@@ -238,6 +243,7 @@
           const directSaveToSheets = async (equipo) => {
              if (GOOGLE_SHEETS_WEBAPP_URL) {
               try {
+                // Notificamos inicio pero no bloqueamos la UI pesadamente
                 setIsSyncing(true);
                 await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
                   method: 'POST',
@@ -257,7 +263,7 @@
 
           const handleAddEquipo = async (e) => {
             e.preventDefault();
-            const id = equipos.length > 0 ? Math.max(...equipos.map(eq => eq.id || 0)) + 1 : 1;
+            const id = `${nuevoEquipo.origen}-${Date.now()}`;
             const numero = equipos.length > 0 ? Math.max(...equipos.map(eq => Number(eq.numero) || 0)) + 1 : 1;
             const equipoGuardar = { ...nuevoEquipo, id, numero };
             
@@ -274,24 +280,30 @@
             setNuevoEquipo(estadoInicialEquipo);
           };
 
-          // ACCIÓN: Clic en el calendario marca palomita (sin mover la fecha proyectada)
+          // ACCIÓN: Clic en el calendario marca palomita guardando directamente el string en Sheets
           const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
               const strY = year.toString();
               const strM = (monthIndex + 1).toString().padStart(2, '0');
-              const targetStr = `${strY}-${strM}`;
+              const targetStr = `${strY}-${strM}`; // Ejemplo: "2026-04"
 
-              let historialArr = equipo.historialEjecuciones ? equipo.historialEjecuciones.split(',') : [];
+              // Convertimos el historial existente (string) a arreglo
+              let historialArr = equipo.historialEjecuciones ? equipo.historialEjecuciones.toString().split(',').map(s => s.trim()).filter(Boolean) : [];
               
               if (historialArr.includes(targetStr)) {
-                  // Si ya estaba, lo quitamos (Deshacer)
+                  // Si ya estaba, lo quitamos
                   historialArr = historialArr.filter(h => h !== targetStr);
               } else {
-                  // Si no estaba, lo agregamos (Marcar como ejecutado)
+                  // Si no estaba, lo agregamos
                   historialArr.push(targetStr);
               }
 
+              // Creamos el equipo actualizado con el nuevo string separado por comas
               const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
+              
+              // Actualizamos interfaz
               setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
+              
+              // Guardamos en Google Sheets
               directSaveToSheets(updatedEquipo);
           };
 
@@ -309,6 +321,18 @@
             setSelectedEquipo(updatedEquipo);
             setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
             directSaveToSheets(updatedEquipo);
+          };
+
+          const handleNewEquipoMantenimientoChange = (field, value) => {
+              const updated = { ...nuevoEquipo, [field]: value };
+              updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, updated.frecuenciaMantenimiento);
+              setNuevoEquipo(updated);
+          };
+
+          const handleEditEquipoMantenimientoChange = (field, value) => {
+              const updated = { ...equipoEditado, [field]: value };
+              updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, updated.frecuenciaMantenimiento);
+              setEquipoEditado(updated);
           };
 
           const getEstatusColor = (estatus) => {
@@ -448,17 +472,15 @@
                                       equiposCalendario.map((equipo) => {
                                           const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, calendarYear);
                                           const historialString = equipo.historialEjecuciones || "";
-                                          const totalProgramados = mesesProgramados.size;
 
                                           const celdas = [0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
                                               const strY = calendarYear.toString();
                                               const strM = (monthIndex + 1).toString().padStart(2, '0');
                                               const targetStr = `${strY}-${strM}`;
                                               
-                                              // La celda es verde si en la celda se dio clic
                                               const isEjecutado = historialString.includes(targetStr);
                                               const isProgramado = mesesProgramados.has(monthIndex);
-                                              
+
                                               let cellClass = "p-1 border border-blue-800 celda-interactiva ";
                                               if (isEjecutado) cellClass += "celda-ejecutada ";
                                               else if (isProgramado) cellClass += "celda-programada ";
@@ -483,7 +505,6 @@
                                                   <td className="p-2 text-gray-600 font-mono border border-blue-800">{equipo.numeroSerie || '-'}</td>
                                                   <td className="p-2 text-gray-600 border border-blue-800">{equipo.ubicacion || '-'}</td>
                                                   <td className="p-2 text-gray-600 border border-blue-800">{equipo.proveedorMantenimiento || 'N/A'}</td>
-                                                  
                                                   {celdas}
                                               </tr>
                                           )
@@ -497,7 +518,6 @@
                           <span className="font-bold text-blue-900 uppercase tracking-widest"><i className="fas fa-info-circle mr-1"></i> Leyenda Visual:</span>
                           <div className="flex items-center gap-2"><div className="w-4 h-4 bg-blue-500 shadow-inner border border-blue-600"></div> <span className="text-gray-700">Mantenimiento Programado</span></div>
                           <div className="flex items-center gap-2"><div className="w-4 h-4 bg-green-500 border border-green-600 flex items-center justify-center text-white text-[10px] font-bold">✓</div> <span className="text-gray-700">Mantenimiento Ejecutado (Clic)</span></div>
-                          <div className="flex items-center gap-2"><i className="fas fa-exclamation-circle text-amber-500"></i> <span className="text-gray-600 italic">El cumplimiento acepta tolerancia de ±1 mes de la fecha programada.</span></div>
                       </div>
                   </div>
               </div>
