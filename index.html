@@ -5,17 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MediCMMS - Mantenimiento</title>
     
-    <!-- React y ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
-    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
@@ -28,6 +21,7 @@
             main { padding: 0 !important; margin: 0 !important; }
             .bg-slate-50 { background-color: white !important; }
             .shadow-sm { box-shadow: none !important; border: none !important; }
+            .page-break { page-break-before: always; }
         }
         
         /* Estilos del Calendario */
@@ -46,9 +40,6 @@
      <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
 
-        // ============================================================================
-        // CONFIGURACIÓN DE GOOGLE SHEETS
-        // ============================================================================
         const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwsPJJ9SQdgz3l8BEDMwpcOT0hYhrfLL3qIdTAYJ7q_Pji5ZBzu_Pt-zmvqcmtokVKi/exec"; 
 
         const motivosOptions = [
@@ -66,7 +57,6 @@
 
         const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
-        // LÓGICA DE PROYECCIONES
         const calcularProximoMantenimiento = (fechaUltimo, frecuencia) => {
             if (!fechaUltimo || !frecuencia) return '';
             const [yearStr, monthStr] = fechaUltimo.split('-');
@@ -105,7 +95,6 @@
             return mesesProgramados;
         };
 
-        // NUEVA FUNCIÓN SANADORA: Extrae solo el formato AÑO-MES (YYYY-MM) de cualquier celda corrupta
         const limpiarHistorial = (str) => {
             if (!str) return [];
             return String(str).split(',').map(s => {
@@ -114,7 +103,6 @@
             }).filter(Boolean);
         };
 
-        // LÓGICA DE CUMPLIMIENTO CON ±1 MES DE HOLGURA
         const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
             if (!historialEjecuciones) return false;
             const ejecutados = limpiarHistorial(historialEjecuciones);
@@ -132,7 +120,7 @@
         };
 
         const CMMSHospitalario = () => {
-          const [activeTab, setActiveTab] = useState('calendarios');
+          const [activeTab, setActiveTab] = useState('dashboard');
           const [inventarioTab, setInventarioTab] = useState('Propio');
           const [equipos, setEquipos] = useState([]);
           const [isSyncing, setIsSyncing] = useState(false);
@@ -160,7 +148,6 @@
 
           useEffect(() => { handleSyncSheets(); }, []);
 
-          // Stats para el Dashboard
           const stats = useMemo(() => {
             return {
               total: equipos.length,
@@ -171,7 +158,6 @@
             };
           }, [equipos]);
 
-          // Data para Cumplimiento Mensual (Dashboard)
           const monthlyCompliance = useMemo(() => {
               return mesesAbreviados.map((nombreMes, monthIndex) => {
                   let programados = 0;
@@ -211,9 +197,12 @@
           const equiposCalendario = useMemo(() => {
               return equipos.filter(e => {
                   if (e.origen !== inventarioTab) return false;
+                  
+                  // REGLA NUEVA: Excluir del calendario equipos sin frecuencia
+                  if (!e.frecuenciaMantenimiento || e.frecuenciaMantenimiento === '') return false;
+                  
                   if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
                   
-                  // Nuevo Filtro de Mes
                   if (filterMesCal !== 'Todos') {
                       const monthIdx = parseInt(filterMesCal, 10);
                       const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
@@ -223,7 +212,6 @@
               });
           }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, calendarYear]);
 
-          // Sincronización Google Sheets
           const handleSyncSheets = async () => {
             setIsSyncing(true);
             if (!GOOGLE_SHEETS_WEBAPP_URL) { setTimeout(() => setIsSyncing(false), 1000); return; }
@@ -282,7 +270,6 @@
             setNuevoEquipo(estadoInicialEquipo);
           };
 
-          // Clic Interactivo en el Calendario
           const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
               const strY = year.toString();
               const strM = (monthIndex + 1).toString().padStart(2, '0');
@@ -296,7 +283,6 @@
                   historialArr.push(targetStr);
               }
 
-              // Eliminar duplicados si los hubiera por el cruce de datos
               historialArr = [...new Set(historialArr)];
 
               const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
@@ -310,10 +296,6 @@
             if (status.includes('fuera de servicio')) return 'bg-red-100 text-red-800 border-red-300';
             return 'bg-gray-100 text-gray-800 border-gray-300'; 
           };
-
-          // ==============================
-          // RENDER COMPONENTS
-          // ==============================
 
           const renderDashboard = () => (
             <div className="space-y-6 animate-in fade-in duration-300">
@@ -392,21 +374,21 @@
 
                   <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="area-impresion">
                       <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto print-hidden">
-                        <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500'}`}>Hoja 1: Equipo Propio</button>
-                        <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500'}`}>Hoja 2: Comodato</button>
-                        <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500'}`}>Hoja 3: Renta</button>
+                        <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
+                        <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
+                        <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
                       </div>
 
                       <div className="p-4 border-b border-gray-100 bg-white flex flex-wrap items-center gap-4 print-hidden">
                           <div className="flex items-center gap-2 flex-1 min-w-[200px]">
                               <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i> Filtro Área:</label>
-                              <select value={filterUbicacionCal} onChange={(e) => setFilterUbicacionCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                              <select value={filterUbicacionCal} onChange={(e) => setFilterUbicacionCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
                                   {ubicacionesUnicas.map(ub => <option key={ub} value={ub}>{ub}</option>)}
                               </select>
                           </div>
                           <div className="flex items-center gap-2 flex-1 min-w-[150px]">
                               <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter mr-1"></i> Mes:</label>
-                              <select value={filterMesCal} onChange={(e) => setFilterMesCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                              <select value={filterMesCal} onChange={(e) => setFilterMesCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
                                   <option value="Todos">Todos los meses</option>
                                   {mesesAbreviados.map((m, i) => <option key={i} value={i}>{m}</option>)}
                               </select>
@@ -417,7 +399,6 @@
                           </div>
                       </div>
 
-                      {/* Cabecera Exclusiva para la Impresión */}
                       <div className="hidden print-block p-6 text-center border-b border-gray-200">
                           <h2 className="text-3xl font-bold text-gray-800 mb-2">Calendario de Mantenimiento Preventivo</h2>
                           <p className="text-gray-600 text-lg">
@@ -873,6 +854,122 @@
                   {activeTab === 'calendarios' && renderCalendarios()}
                 </div>
               </main>
+
+              {}
+              {showAddEquipo && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-blue-50">
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-800">Registrar Nuevo Equipo</h3>
+                        <p className="text-xs text-blue-600 font-medium mt-1 flex items-center gap-1">
+                          <i className="fas fa-database"></i> Se guardará en la hoja: <strong>{nuevoEquipo.origen}</strong>
+                        </p>
+                      </div>
+                      <button onClick={() => setShowAddEquipo(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+                    </div>
+                    
+                    <form onSubmit={handleAddEquipo} className="p-6 overflow-y-auto flex-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="lg:col-span-3 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
+                          <label className="block text-xs font-bold text-blue-800 mb-1">¿A qué hoja de cálculo pertenece este registro?</label>
+                          <select value={nuevoEquipo.origen} onChange={(e) => setNuevoEquipo({...nuevoEquipo, origen: e.target.value})} className="w-full md:w-1/3 px-3 py-2 border border-blue-200 rounded-lg text-sm font-medium text-blue-900 bg-white">
+                            <option value="Propio">Hoja: Equipo Propio</option>
+                            <option value="Comodato">Hoja: Equipo en Comodato</option>
+                            <option value="Renta">Hoja: Equipo en Renta</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1">Núm. de Inventario Interno *</label>
+                          <input required type="text" value={nuevoEquipo.numeroInventario} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroInventario: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej. INV-1234" />
+                        </div>
+                        <div className="lg:col-span-2">
+                          <label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label>
+                          <input required type="text" value={nuevoEquipo.nombre} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label>
+                          <select value={nuevoEquipo.tipoTecnologia} onChange={(e) => setNuevoEquipo({...nuevoEquipo, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                            <option value="Equipo Médico">Equipo Médico</option>
+                            <option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option>
+                            <option value="Infraestructura">Infraestructura</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label>
+                          <select required value={nuevoEquipo.estatus} onChange={(e) => setNuevoEquipo({...nuevoEquipo, estatus: e.target.value, motivoFueraServicio: e.target.value === 'En Servicio' ? '' : motivosOptions[0]})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                            <option value="En Servicio">En Servicio</option>
+                            <option value="Fuera de Servicio">Fuera de Servicio</option>
+                          </select>
+                        </div>
+
+                        {nuevoEquipo.estatus === 'Fuera de Servicio' && (
+                          <div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2">
+                            <label className="block text-xs font-bold text-red-600 mb-1">Seleccione el motivo de "Fuera de Servicio"</label>
+                            <select value={nuevoEquipo.motivoFueraServicio} onChange={(e) => setNuevoEquipo({...nuevoEquipo, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">
+                              {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                          </div>
+                        )}
+
+                        <div className="lg:col-span-3 border-t border-gray-200 my-2 pt-4">
+                            <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Configuración de Mantenimiento Preventivo</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 mb-1">Frecuencia</label>
+                                    <select value={nuevoEquipo.frecuenciaMantenimiento} onChange={(e) => {
+                                        const updated = {...nuevoEquipo, frecuenciaMantenimiento: e.target.value};
+                                        updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, e.target.value);
+                                        setNuevoEquipo(updated);
+                                    }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                      {frecuenciasOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año del Último Servicio (Base)</label>
+                                    <input type="month" value={nuevoEquipo.ultimoMantenimiento} onChange={(e) => {
+                                        const updated = {...nuevoEquipo, ultimoMantenimiento: e.target.value};
+                                        updated.proximoMantenimiento = calcularProximoMantenimiento(e.target.value, updated.frecuenciaMantenimiento);
+                                        setNuevoEquipo(updated);
+                                    }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Próximo (Calculado)</label>
+                                    <input type="month" value={nuevoEquipo.proximoMantenimiento} readOnly className="w-full px-3 py-2 border border-blue-200 bg-blue-50 text-blue-800 font-bold rounded-lg text-sm cursor-not-allowed" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Marca</label><input type="text" value={nuevoEquipo.marca} onChange={(e) => setNuevoEquipo({...nuevoEquipo, marca: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Modelo o Versión</label><input type="text" value={nuevoEquipo.modelo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, modelo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={nuevoEquipo.numeroSerie} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={nuevoEquipo.fabricante} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={nuevoEquipo.ubicacion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo Vigente?</label>
+                          <select value={nuevoEquipo.polizaMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                            <option value="Sí">Sí</option><option value="No">No</option>
+                          </select>
+                        </div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={nuevoEquipo.nivelRiesgo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor de Mantenimiento</label><input type="text" value={nuevoEquipo.proveedorMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={nuevoEquipo.fechaAlta} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div className="lg:col-span-3">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Descripción del Equipo</label>
+                          <textarea value={nuevoEquipo.descripcion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea>
+                        </div>
+                      </div>
+                      <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
+                        <button type="button" onClick={() => setShowAddEquipo(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
+                        <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
+                          {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>}
+                          {isSyncing ? 'Guardando en Sheets...' : 'Guardar y Sincronizar'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
             </div>
           );
         };
