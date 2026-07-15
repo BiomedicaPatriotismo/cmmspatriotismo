@@ -90,6 +90,7 @@
         .tabla-cal th, .tabla-cal td { border: 1px solid #1e3a8a; }
         .tabla-cal th { background-color: #60a5fa !important; color: white !important; font-weight: bold; text-align: center; }
         .celda-prog { background-color: #3b82f6 !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
+        .celda-fuera-servicio { background-color: #ef4444 !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
         .celda-ejec { background-color: #22c55e !important; position: relative; }
         .celda-ejec::after { content: '✓'; color: white; font-size: 14px; font-weight: bold; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
         .celda-interactiva { min-width: 25px; height: 25px; text-align: center; cursor: pointer; transition: background-color 0.2s; }
@@ -116,16 +117,97 @@
 
         const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
+        const motivosOptions = [
+            "PENDIENTE DE CALIBRACION", "EN MANTENIMIENTO PREVENTIVO", "EN REPARACION", 
+            "EN ESPERA DE REFACCIONES", "DAÑO SIN POSIBILIDAD DE REPARACION", "PRESTADO", 
+            "EN CAMBIO O SUSTITUCION", "BAJA DEFINITIVA"
+        ];
+
+        const frecuenciasOptions = [
+            { id: '', label: 'No aplica / Sin definir' }, { id: 'M', label: 'M - MENSUAL' }, 
+            { id: 'B', label: 'B - BIMESTRAL' }, { id: 'T', label: 'T - TRIMESTRAL' }, 
+            { id: 'C', label: 'C - CUATRIMESTRAL' }, { id: 'S', label: 'S - SEMESTRAL' }, 
+            { id: 'A', label: 'A - ANUAL' }
+        ];
+
+        const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+
+        // Función Compartida: Proyectar Meses
+        const obtenerMesesProgramados = (ultimoMantenimiento, frecuencia, targetYear) => {
+            const mesesProgramados = new Set();
+            if (!ultimoMantenimiento || !frecuencia) return mesesProgramados;
+            const [uYear, uMonth] = ultimoMantenimiento.split('-').map(Number);
+            if (!uYear || !uMonth) return mesesProgramados;
+
+            let interval = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
+            if (interval === 0) return mesesProgramados;
+
+            let startMonth = uMonth - 1; 
+            let startYear = uYear;
+            while (startYear >= targetYear && interval > 0) {
+                startMonth -= interval;
+                while (startMonth < 0) { startMonth += 12; startYear -= 1; }
+            }
+
+            let simMonth = startMonth;
+            let simYear = startYear;
+            for (let i = 0; i < 100; i++) {
+                simMonth += interval;
+                while (simMonth > 11) { simMonth -= 12; simYear += 1; }
+                if (simYear === targetYear) { mesesProgramados.add(simMonth); }
+                else if (simYear > targetYear) { break; }
+            }
+            return mesesProgramados;
+        };
+
+        const calcularProximoMantenimiento = (fechaUltimo, frecuencia) => {
+            if (!fechaUltimo || !frecuencia) return '';
+            const [yearStr, monthStr] = fechaUltimo.split('-');
+            let date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
+            if (isNaN(date.getTime())) return '';
+            let meses = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
+            date.setMonth(date.getMonth() + meses);
+            const m = date.getMonth() + 1;
+            return `${date.getFullYear()}-${m < 10 ? '0' : ''}${m}`; 
+        };
+
+        // Función Compartida: Limpiar Historial (Quita el formato raro de Google Sheets)
+        const limpiarHistorial = (str) => {
+            if (!str) return [];
+            return String(str).split(',').map(s => {
+                const match = s.match(/(\d{4})-(\d{2})/);
+                return match ? match[0] : null;
+            }).filter(Boolean);
+        };
+
+        // Función Compartida: Verificar Cumplimiento ±1 Mes
+        const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
+            if (!historialEjecuciones) return false;
+            const ejecutados = limpiarHistorial(historialEjecuciones);
+            const formatYM = (y, m) => `${y}-${(m + 1).toString().padStart(2, '0')}`;
+            
+            let pMonth = targetMonthIndex - 1, pYear = targetYear;
+            if (pMonth < 0) { pMonth = 11; pYear--; }
+            
+            let nMonth = targetMonthIndex + 1, nYear = targetYear;
+            if (nMonth > 11) { nMonth = 0; nYear++; }
+
+            return ejecutados.includes(formatYM(targetYear, targetMonthIndex)) || 
+                   ejecutados.includes(formatYM(pYear, pMonth)) || 
+                   ejecutados.includes(formatYM(nYear, nMonth));
+        };
+
         // ============================================================================
         // COMPONENTE: DASHBOARD DE INDICADORES (Oscuro)
         // ============================================================================
-        const IndicadoresDashboard = () => {
+        const IndicadoresDashboard = ({ equipos }) => {
             const [dataSet, setDataSet] = useState({});
             const [historico, setHistorico] = useState({ meses: [], mp: [], gastoTotal: [] });
             const [currentMonth, setCurrentMonth] = useState('');
             const [isAnnualView, setIsAnnualView] = useState(false);
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(false);
+            const [dashYear, setDashYear] = useState(new Date().getFullYear()); // Para el cumplimiento real de MP
 
             // Refs para los canvas de Chart.js
             const ratioChartRef = useRef(null);
@@ -135,7 +217,7 @@
             const expenseTrendChartRef = useRef(null);
             const chartInstances = useRef({});
 
-            // 1. Cargar Datos desde CSV
+            // Cargar Datos desde CSV para los indicadores generales
             useEffect(() => {
                 Papa.parse(GOOGLE_SHEET_CSV_URL, {
                     download: true,
@@ -223,7 +305,6 @@
                 }
             };
 
-            // 2. Cálculo de Datos a Renderizar (Mensual o Anual)
             const currentData = useMemo(() => {
                 if (Object.keys(dataSet).length === 0) return null;
 
@@ -256,11 +337,40 @@
                 }
             }, [dataSet, currentMonth, isAnnualView]);
 
-            // 3. Renderizado de Gráficas Chart.js
+            // Cálculo Real del Porcentaje de Cumplimiento (Basado en el Calendario y Mantenimientos Ejecutados)
+            const monthlyCompliance = useMemo(() => {
+                if (!equipos || equipos.length === 0) return [];
+                
+                return mesesAbreviados.map((nombreMes, monthIndex) => {
+                    let programados = 0;
+                    let cumplidos = 0;
+                    
+                    equipos.forEach(equipo => {
+                        // REGLA: Si es BAJA DEFINITIVA, se ignora del cálculo por completo.
+                        if (equipo.motivoFueraServicio === 'BAJA DEFINITIVA') return;
+                        
+                        const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, dashYear);
+                        
+                        if (mesesProgramados.has(monthIndex)) {
+                            // REGLA: Si el equipo está Fuera de Servicio, no cuenta para el cálculo de cumplimiento
+                            if (equipo.estatus !== 'Fuera de Servicio') {
+                                programados++;
+                                if (verificarCumplimiento(equipo.historialEjecuciones, monthIndex, dashYear)) {
+                                    cumplidos++;
+                                }
+                            }
+                        }
+                    });
+                    
+                    const pct = programados === 0 ? 100 : Math.round((cumplidos / programados) * 100);
+                    return { mes: nombreMes, programados, cumplidos, pct };
+                });
+            }, [equipos, dashYear]);
+
+            // Renderizado de Gráficas Chart.js
             useEffect(() => {
                 if (!currentData) return;
 
-                // Destruir instancias previas
                 Object.values(chartInstances.current).forEach(chart => chart && chart.destroy());
                 chartInstances.current = {};
 
@@ -272,7 +382,6 @@
                 Chart.defaults.plugins.tooltip.borderColor = '#334155';
                 Chart.defaults.plugins.tooltip.borderWidth = 1;
 
-                // 1. Ratio Chart (Doughnut)
                 if (ratioChartRef.current) {
                     chartInstances.current.ratio = new Chart(ratioChartRef.current, {
                         type: 'doughnut',
@@ -281,7 +390,6 @@
                     });
                 }
 
-                // 2. Downtime Chart (Bar)
                 if (downtimeChartRef.current) {
                     chartInstances.current.downtime = new Chart(downtimeChartRef.current, {
                         type: 'bar',
@@ -290,7 +398,6 @@
                     });
                 }
 
-                // 3. Budget Chart (Bar)
                 if (budgetChartRef.current) {
                     chartInstances.current.budget = new Chart(budgetChartRef.current, {
                         type: 'bar',
@@ -299,7 +406,6 @@
                     });
                 }
 
-                // 4. Trend Chart (Line)
                 if (trendChartRef.current) {
                     chartInstances.current.trend = new Chart(trendChartRef.current, {
                         type: 'line',
@@ -314,7 +420,6 @@
                     });
                 }
 
-                // 5. Expense Trend Chart (Line - Solo Anual)
                 if (isAnnualView && expenseTrendChartRef.current) {
                     chartInstances.current.expense = new Chart(expenseTrendChartRef.current, {
                         type: 'line',
@@ -360,7 +465,7 @@
                                 </span>
                             </h1>
                             <p className="text-slate-400 mt-1"><i className="fa-regular fa-hospital mr-2"></i>Hospital San Ángel Inn Patriotismo</p>
-                            <p className="text-xs text-slate-500 mt-2 font-mono"><i className="fa-solid fa-link text-success mr-1 print-hidden"></i> Origen de datos: Google Sheets (Sincronizado)</p>
+                            <p className="text-xs text-slate-500 mt-2 font-mono"><i className="fa-solid fa-link text-success mr-1 print-hidden"></i> Origen de datos: Google Sheets</p>
                         </div>
                         
                         <div className="flex flex-wrap items-center gap-3 print-hidden">
@@ -385,7 +490,6 @@
 
                     {/* KPIs Superiores */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                        {/* KPI 1: MP */}
                         <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
                             <div className="flex justify-between items-start mb-2">
                                 <p className="text-slate-400 text-sm font-medium">{isAnnualView ? 'Promedio MP Anual' : 'Cumplimiento MP'}</p>
@@ -400,7 +504,6 @@
                             </div>
                         </div>
 
-                        {/* KPI 2: MTTR */}
                         <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
                             <div className="flex justify-between items-start mb-2">
                                 <p className="text-slate-400 text-sm font-medium">{isAnnualView ? 'Promedio MTTR Anual' : 'MTTR (Mensual)'}</p>
@@ -415,11 +518,10 @@
                             </div>
                         </div>
 
-                        {/* KPI 3: Downtime */}
                         <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
                             <div className="flex justify-between items-start mb-2">
                                 <p className="text-slate-400 text-sm font-medium">Downtime Modalidades</p>
-                                <div className="p-2 bg-slate-800/50 rounded-lg text-danger print-hidden"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                <div className="p-2 bg-slate-800/50 rounded-lg text-danger print-hidden"><i className="fa-solid fa-triangle-exclamation"></i></div>
                             </div>
                             <div>
                                 <h3 className="text-3xl font-bold text-danger">{currentData.kpis.downtime} <span className="text-lg font-normal text-slate-400">hrs</span></h3>
@@ -427,7 +529,6 @@
                             </div>
                         </div>
 
-                        {/* KPI 4: Gasto */}
                         <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between relative overflow-hidden page-break-inside-avoid">
                             <div className="flex justify-between items-start mb-2 relative z-10">
                                 <p className="text-slate-400 text-sm font-medium">Ejecución Gasto</p>
@@ -482,7 +583,7 @@
                                     <div className="bg-dark p-3 rounded-lg border border-slate-700/50">
                                         <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2">Mantenimiento</p>
                                         <div className="flex flex-col text-xs gap-1">
-                                            <div class="flex justify-between"><span className="text-slate-400">Presupuestado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.asigMtto)}</span></div>
+                                            <div className="flex justify-between"><span className="text-slate-400">Presupuestado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.asigMtto)}</span></div>
                                             <div className="flex justify-between"><span className="text-slate-400">Gastado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.ejerMtto)}</span></div>
                                         </div>
                                     </div>
@@ -530,6 +631,35 @@
                             </div>
                         </div>
                     </div>
+
+                    {/* GRÁFICA DE CUMPLIMIENTO MENSUAL REAL (DESDE INVENTARIO) */}
+                    <div className="bg-panel rounded-xl shadow-sm border border-slate-800 p-6 mt-6 page-break-before">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-lg font-bold text-white flex items-center"><i className="fas fa-clipboard-check text-primary mr-2"></i> Cumplimiento Mensual (Tolerancia ±1 Mes)</h3>
+                            <div className="flex items-center gap-2 print-hidden">
+                                <label className="text-sm font-bold text-slate-400">AÑO:</label>
+                                <input type="number" value={dashYear} onChange={(e) => setDashYear(parseInt(e.target.value))} className="w-20 p-1 text-center bg-dark border border-slate-700 rounded text-sm font-bold text-white outline-none focus:border-primary" />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            {monthlyCompliance.map(mesData => (
+                                <div key={mesData.mes} className={`border rounded-lg p-3 text-center transition-colors ${mesData.programados === 0 ? 'bg-dark border-slate-800 opacity-60' : 'bg-dark border-slate-700 shadow-sm'}`}>
+                                    <p className="font-bold text-slate-300">{mesData.mes}</p>
+                                    <div className="my-2">
+                                        <span className={`text-2xl font-black ${mesData.programados === 0 ? 'text-slate-500' : mesData.pct >= 80 ? 'text-success' : mesData.pct >= 50 ? 'text-warning' : 'text-danger'}`}>
+                                            {mesData.programados === 0 ? '-' : `${mesData.pct}%`}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-slate-500 flex justify-center gap-2 font-medium">
+                                        <span title="Cumplidos" className="text-success font-bold"><i className="fas fa-check"></i> {mesData.cumplidos}</span>
+                                        <span title="Programados" className="text-primary font-bold"><i className="fas fa-wrench"></i> {mesData.programados}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-4 text-center italic"><i className="fas fa-info-circle"></i> Los equipos "Fuera de Servicio" no penalizan la métrica de Programados.</p>
+                    </div>
+
                 </div>
             );
         };
@@ -537,54 +667,6 @@
         // ============================================================================
         // LÓGICA PRINCIPAL CMMS (INVENTARIO Y CALENDARIOS)
         // ============================================================================
-        const motivosOptions = ["PENDIENTE DE CALIBRACION", "EN MANTENIMIENTO PREVENTIVO", "EN REPARACION", "EN ESPERA DE REFACCIONES", "DAÑO SIN POSIBILIDAD DE REPARACION", "PRESTADO", "EN CAMBIO O SUSTITUCION", "BAJA DEFINITIVA"];
-        const frecuenciasOptions = [ { id: '', label: 'No aplica / Sin definir' }, { id: 'M', label: 'M - MENSUAL' }, { id: 'B', label: 'B - BIMESTRAL' }, { id: 'T', label: 'T - TRIMESTRAL' }, { id: 'C', label: 'C - CUATRIMESTRAL' }, { id: 'S', label: 'S - SEMESTRAL' }, { id: 'A', label: 'A - ANUAL' } ];
-        const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
-
-        const calcularProximoMantenimiento = (fechaUltimo, frecuencia) => {
-            if (!fechaUltimo || !frecuencia) return '';
-            const [yearStr, monthStr] = fechaUltimo.split('-');
-            let date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
-            if (isNaN(date.getTime())) return '';
-            let meses = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
-            date.setMonth(date.getMonth() + meses);
-            const m = date.getMonth() + 1;
-            return `${date.getFullYear()}-${m < 10 ? '0' : ''}${m}`; 
-        };
-
-        const obtenerMesesProgramados = (ultimoMantenimiento, frecuencia, targetYear) => {
-            const mesesProgramados = new Set();
-            if (!ultimoMantenimiento || !frecuencia) return mesesProgramados;
-            const [uYear, uMonth] = ultimoMantenimiento.split('-').map(Number);
-            if (!uYear || !uMonth) return mesesProgramados;
-
-            let interval = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
-            if (interval === 0) return mesesProgramados;
-
-            let startMonth = uMonth - 1, startYear = uYear;
-            while (startYear >= targetYear && interval > 0) {
-                startMonth -= interval;
-                while (startMonth < 0) { startMonth += 12; startYear -= 1; }
-            }
-
-            let simMonth = startMonth, simYear = startYear;
-            for (let i = 0; i < 100; i++) {
-                simMonth += interval;
-                while (simMonth > 11) { simMonth -= 12; simYear += 1; }
-                if (simYear === targetYear) { mesesProgramados.add(simMonth); }
-                else if (simYear > targetYear) { break; }
-            }
-            return mesesProgramados;
-        };
-
-        const limpiarHistorial = (str) => {
-            if (!str) return [];
-            return String(str).split(',').map(s => {
-                const match = s.match(/(\d{4})-(\d{2})/);
-                return match ? match[0] : null;
-            }).filter(Boolean);
-        };
-
         const CMMSHospitalario = () => {
           const [activeTab, setActiveTab] = useState('dashboard');
           const [inventarioTab, setInventarioTab] = useState('Propio');
@@ -632,7 +714,13 @@
           const equiposCalendario = useMemo(() => {
               return equipos.filter(e => {
                   if (e.origen !== inventarioTab) return false;
+                  
+                  // FILTRO: Excluir equipos sin frecuencia definida
                   if (!e.frecuenciaMantenimiento || e.frecuenciaMantenimiento === '') return false;
+                  
+                  // FILTRO: Excluir BAJA DEFINITIVA del calendario
+                  if (e.motivoFueraServicio === 'BAJA DEFINITIVA') return false;
+
                   if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
                   
                   if (searchControlCal) {
@@ -794,6 +882,9 @@
                                           const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, calendarYear);
                                           const historialString = equipo.historialEjecuciones || "";
                                           const ejecutadosArr = limpiarHistorial(historialString);
+                                          
+                                          // Variable para verificar si el equipo está fuera de servicio
+                                          const isFueraServicio = equipo.estatus === 'Fuera de Servicio';
 
                                           const celdas = [0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
                                               const strY = calendarYear.toString();
@@ -804,9 +895,17 @@
                                               const isProgramado = mesesProgramados.has(monthIndex);
                                               
                                               let cellClass = "p-1 border border-blue-800 celda-interactiva ";
-                                              if (isEjecutado) cellClass += "celda-ejec ";
-                                              else if (isProgramado) cellClass += "celda-prog ";
-                                              else cellClass += "bg-white ";
+                                              if (isEjecutado) {
+                                                  cellClass += "celda-ejec ";
+                                              } else if (isProgramado) {
+                                                  if (isFueraServicio) {
+                                                      cellClass += "celda-fuera-servicio "; // SE PINTARÁ DE ROJO
+                                                  } else {
+                                                      cellClass += "celda-prog "; // SE PINTARÁ DE AZUL NORMAL
+                                                  }
+                                              } else {
+                                                  cellClass += "bg-white ";
+                                              }
 
                                               return (
                                                   <td 
@@ -839,6 +938,7 @@
                           <span className="font-bold text-blue-900 uppercase tracking-widest"><i className="fas fa-info-circle mr-1"></i> Leyenda Visual:</span>
                           <div className="flex items-center gap-2"><div className="w-4 h-4 bg-blue-500 shadow-inner border border-blue-600"></div> <span>Programado</span></div>
                           <div className="flex items-center gap-2"><div className="w-4 h-4 bg-green-500 border border-green-600 flex items-center justify-center text-white text-[10px] font-bold">✓</div> <span>Ejecutado (Clic)</span></div>
+                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-red-500 shadow-inner border border-red-600"></div> <span>Fuera de Servicio</span></div>
                       </div>
                   </div>
               </div>
@@ -873,7 +973,7 @@
                       </div>
                       {equipoEditado.estatus === 'Fuera de Servicio' && (
                         <div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2">
-                          <label className="block text-xs font-bold text-red-600 mb-1">Motivo de "Fuera de Servicio"</label>
+                          <label className="block text-xs font-bold text-red-600 mb-1">Seleccione el motivo de "Fuera de Servicio"</label>
                           <select value={equipoEditado.motivoFueraServicio} onChange={(e) => setEquipoEditado({...equipoEditado, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">
                             {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
                           </select>
@@ -881,7 +981,7 @@
                       )}
                       
                       <div className="lg:col-span-3 border-t border-gray-200 my-2 pt-4">
-                          <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Mantenimiento Preventivo</h4>
+                          <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Configuración de Mantenimiento Preventivo</h4>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div>
                                   <label className="block text-xs font-bold text-gray-700 mb-1">Frecuencia</label>
@@ -894,7 +994,7 @@
                                   </select>
                               </div>
                               <div>
-                                  <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Último (Base)</label>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año del Último Servicio (Base)</label>
                                   <input type="month" value={equipoEditado.ultimoMantenimiento} onChange={(e) => {
                                       const updated = {...equipoEditado, ultimoMantenimiento: e.target.value};
                                       updated.proximoMantenimiento = calcularProximoMantenimiento(e.target.value, updated.frecuenciaMantenimiento);
@@ -913,16 +1013,26 @@
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={equipoEditado.numeroSerie} onChange={(e) => setEquipoEditado({...equipoEditado, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={equipoEditado.fabricante} onChange={(e) => setEquipoEditado({...equipoEditado, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={equipoEditado.ubicacion} onChange={(e) => setEquipoEditado({...equipoEditado, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={equipoEditado.polizaMantenimiento} onChange={(e) => setEquipoEditado({...equipoEditado, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Sí">Sí</option><option value="No">No</option></select></div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo Vigente?</label>
+                        <select value={equipoEditado.polizaMantenimiento} onChange={(e) => setEquipoEditado({...equipoEditado, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                          <option value="Sí">Sí</option><option value="No">No</option>
+                        </select>
+                      </div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={equipoEditado.nivelRiesgo} onChange={(e) => setEquipoEditado({...equipoEditado, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={equipoEditado.proveedorMantenimiento} onChange={(e) => setEquipoEditado({...equipoEditado, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor de Mantenimiento</label><input type="text" value={equipoEditado.proveedorMantenimiento} onChange={(e) => setEquipoEditado({...equipoEditado, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={equipoEditado.fechaAlta ? equipoEditado.fechaAlta.split('T')[0] : ''} onChange={(e) => setEquipoEditado({...equipoEditado, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div className="lg:col-span-3"><label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label><textarea value={equipoEditado.descripcion} onChange={(e) => setEquipoEditado({...equipoEditado, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea></div>
+                      <div className="lg:col-span-3">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Descripción del Equipo</label>
+                        <textarea value={equipoEditado.descripcion} onChange={(e) => setEquipoEditado({...equipoEditado, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea>
+                      </div>
                     </div>
+                    
                     <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
                       <button type="button" onClick={() => setIsEditing(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
                       <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
-                        {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>} Guardar Cambios
+                        {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>}
+                        Guardar Cambios
                       </button>
                     </div>
                   </form>
@@ -935,9 +1045,13 @@
               return (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
                   <div className="p-4 border-b border-gray-100 flex items-center gap-4 bg-gray-50">
-                    <button onClick={() => setSelectedEquipo(null)} className="text-gray-500 hover:text-blue-600 transition flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 shadow-sm"><i className="fas fa-arrow-left"></i> Volver</button>
+                    <button onClick={() => setSelectedEquipo(null)} className="text-gray-500 hover:text-blue-600 transition flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 shadow-sm">
+                      <i className="fas fa-arrow-left"></i> Volver al Inventario
+                    </button>
                     <div className="ml-auto flex gap-2">
-                      <button onClick={() => { setEquipoEditado({...selectedEquipo}); setIsEditing(true); }} className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition shadow-sm font-medium text-sm"><i className="fas fa-edit"></i> Editar Información</button>
+                      <button onClick={() => { setEquipoEditado({...selectedEquipo}); setIsEditing(true); }} className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition shadow-sm font-medium text-sm">
+                        <i className="fas fa-edit"></i> Editar Información
+                      </button>
                     </div>
                   </div>
 
@@ -945,52 +1059,124 @@
                     <div className="flex flex-col lg:flex-row justify-between items-start gap-4 mb-8 border-b border-gray-100 pb-6">
                       <div className="flex-1">
                         <h2 className="text-3xl font-bold mb-2">{selectedEquipo.nombre || 'Equipo sin nombre'}</h2>
+                        
                         <div className="flex flex-wrap items-center gap-3 text-sm">
-                            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200 shadow-sm"><i className="fas fa-wrench mr-2"></i> {freqText}</span>
-                            {selectedEquipo.ultimoMantenimiento && <span className="text-gray-600 font-medium flex items-center bg-gray-50 px-2 py-1 rounded border border-gray-200"><i className="far fa-calendar-check mr-2 text-gray-400"></i> Último Base: {selectedEquipo.ultimoMantenimiento}</span>}
-                            {selectedEquipo.proximoMantenimiento && <span className="text-emerald-700 font-bold flex items-center bg-emerald-50 px-2 py-1 rounded border border-emerald-200"><i className="fas fa-arrow-right mx-2 text-emerald-400"></i> Próximo Est.: {selectedEquipo.proximoMantenimiento}</span>}
+                            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200 shadow-sm">
+                                <i className="fas fa-wrench mr-2"></i> {freqText}
+                            </span>
+                            {selectedEquipo.ultimoMantenimiento && (
+                                <span className="text-gray-600 font-medium flex items-center bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                                    <i className="far fa-calendar-check mr-2 text-gray-400"></i> Último Base: {selectedEquipo.ultimoMantenimiento}
+                                </span>
+                            )}
+                            {selectedEquipo.proximoMantenimiento && (
+                                <span className="text-emerald-700 font-bold flex items-center bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                                    <i className="fas fa-arrow-right mx-2 text-emerald-400"></i> Próximo Est.: {selectedEquipo.proximoMantenimiento}
+                                </span>
+                            )}
                         </div>
                       </div>
+                      
                       <div className="flex flex-col items-end gap-3 min-w-[250px]">
-                        <span className={`px-4 py-2 rounded-lg border font-bold text-lg text-center shadow-sm w-full ${getEstatusColor(selectedEquipo.estatus)}`}>{selectedEquipo.numeroInventario || 'Sin No. Inv'}</span>
+                        <span className={`px-4 py-2 rounded-lg border font-bold text-lg text-center shadow-sm w-full ${getEstatusColor(selectedEquipo.estatus)}`}>
+                          {selectedEquipo.numeroInventario || 'Sin No. Inv'}
+                        </span>
+                        
                         <div className="w-full bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col gap-2">
                           <div className="flex items-center justify-between">
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest"><i className="fas fa-exchange-alt mr-1"></i> Estatus:</label>
-                            <select value={selectedEquipo.estatus} onChange={(e) => {
+                            <select 
+                              value={selectedEquipo.estatus} 
+                              onChange={(e) => {
                                   const updated = { ...selectedEquipo, estatus: e.target.value };
                                   if (e.target.value === 'En Servicio') updated.motivoFueraServicio = '';
                                   else updated.motivoFueraServicio = motivosOptions[0];
-                                  setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated);
-                              }} className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${selectedEquipo.estatus === 'En Servicio' ? 'text-emerald-700' : 'text-red-700'}`}>
-                              <option value="En Servicio" className="text-emerald-700 font-bold">En Servicio</option><option value="Fuera de Servicio" className="text-red-700 font-bold">Fuera de Servicio</option>
+                                  setSelectedEquipo(updated);
+                                  setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+                                  directSaveToSheets(updated);
+                              }}
+                              className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${
+                                selectedEquipo.estatus === 'En Servicio' ? 'text-emerald-700' : 'text-red-700'
+                              }`}
+                            >
+                              <option value="En Servicio" className="text-emerald-700 font-bold">En Servicio</option>
+                              <option value="Fuera de Servicio" className="text-red-700 font-bold">Fuera de Servicio</option>
                             </select>
                           </div>
+                          
                           {selectedEquipo.estatus === 'Fuera de Servicio' && (
                             <div className="flex flex-col gap-1 mt-1 border-t border-gray-100 pt-2 animate-in fade-in">
                               <label className="text-[10px] font-bold text-red-500 uppercase">Motivo:</label>
-                              <select value={selectedEquipo.motivoFueraServicio || ''} onChange={(e) => {
+                              <select 
+                                value={selectedEquipo.motivoFueraServicio || ''} 
+                                onChange={(e) => {
                                     const updated = { ...selectedEquipo, motivoFueraServicio: e.target.value };
-                                    setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated);
-                                }} className="text-xs font-medium border border-red-200 rounded p-1.5 text-red-700 bg-red-50 w-full outline-none">
-                                <option value="" disabled>Seleccione un motivo...</option>{motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                                    setSelectedEquipo(updated);
+                                    setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+                                    directSaveToSheets(updated);
+                                }}
+                                className="text-xs font-medium border border-red-200 rounded p-1.5 text-red-700 bg-red-50 w-full outline-none"
+                              >
+                                <option value="" disabled>Seleccione un motivo...</option>
+                                {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
                               </select>
                             </div>
                           )}
                         </div>
                       </div>
                     </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8">
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Categoría</p><p className="font-medium">{selectedEquipo.tipoTecnologia || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Marca</p><p className="font-medium">{selectedEquipo.marca || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Modelo / Versión</p><p className="font-medium">{selectedEquipo.modelo || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Número de Serie</p><p className="font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Ubicación Física</p><p className="font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fabricante</p><p className="font-medium">{selectedEquipo.fabricante || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p><p className="font-medium">{selectedEquipo.polizaMantenimiento === 'Sí' ? <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : <span className="text-gray-500">Sin Póliza</span>}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Proveedor Mantenimiento</p><p className="font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p><p className="font-medium">{selectedEquipo.nivelRiesgo || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta</p><p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p></div>
-                      <div className="lg:col-span-3 mt-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p><p className="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">{selectedEquipo.descripcion || 'Sin descripción.'}</p></div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Categoría</p>
+                        <p className="font-medium">{selectedEquipo.tipoTecnologia || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Marca</p>
+                        <p className="font-medium">{selectedEquipo.marca || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Modelo / Versión</p>
+                        <p className="font-medium">{selectedEquipo.modelo || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Número de Serie</p>
+                        <p className="font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Ubicación Física</p>
+                        <p className="font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fabricante</p>
+                        <p className="font-medium">{selectedEquipo.fabricante || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p>
+                        <p className="font-medium">
+                          {selectedEquipo.polizaMantenimiento === 'Sí' ? 
+                            <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : 
+                            <span className="text-gray-500">Sin Póliza</span>}
+                        </p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Proveedor Mantenimiento</p>
+                        <p className="font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p>
+                        <p className="font-medium">{selectedEquipo.nivelRiesgo || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta al Inventario</p>
+                        <p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p>
+                      </div>
+                      <div className="lg:col-span-3 mt-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p>
+                        <p className="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">
+                            {selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1000,10 +1186,19 @@
             return (
               <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <h2 className="text-2xl font-bold flex items-center gap-2"><i className="fas fa-stethoscope text-blue-600"></i> Hojas de Inventario</h2>
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <i className="fas fa-stethoscope text-blue-600"></i> Hojas de Inventario
+                  </h2>
+                  
                   <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm"><i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}</button>
-                    <button onClick={() => { setNuevoEquipo({...estadoInicialEquipo, origen: inventarioTab}); setShowAddEquipo(true); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm"><i className="fas fa-plus"></i> Agregar Equipo</button>
+                    <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm">
+                      <i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> 
+                      {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}
+                    </button>
+                    
+                    <button onClick={() => { setNuevoEquipo({...estadoInicialEquipo, origen: inventarioTab}); setShowAddEquipo(true); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm">
+                      <i className="fas fa-plus"></i> Agregar Equipo
+                    </button>
                   </div>
                 </div>
 
@@ -1017,12 +1212,24 @@
                   <div className="p-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row gap-3">
                     <div className="relative flex-1">
                       <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                      <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder={`Buscar en ${inventarioTab.toLowerCase()} (Nombre, Marca, Serie, Inv)...`} className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
+                      <input 
+                        type="text" 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder={`Buscar en ${inventarioTab.toLowerCase()} (Nombre, Marca, Serie, Inv)...`} 
+                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" 
+                      />
                     </div>
                     <div className="flex items-center gap-2">
                         <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter"></i> Filtro Estatus:</label>
-                        <select value={filterEstatus} onChange={(e) => setFilterEstatus(e.target.value)} className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
-                            <option value="Todos">Mostrar Todos</option><option value="En Servicio">Sólo En Servicio</option><option value="Fuera de Servicio">Sólo Fuera de Servicio</option>
+                        <select 
+                            value={filterEstatus}
+                            onChange={(e) => setFilterEstatus(e.target.value)}
+                            className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                        >
+                            <option value="Todos">Mostrar Todos</option>
+                            <option value="En Servicio">Sólo En Servicio</option>
+                            <option value="Fuera de Servicio">Sólo Fuera de Servicio</option>
                         </select>
                     </div>
                   </div>
@@ -1031,7 +1238,11 @@
                     <table className="w-full text-left border-collapse whitespace-nowrap">
                       <thead>
                         <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
-                          <th className="p-4 font-bold border-b">NO. INV.</th><th className="p-4 font-bold border-b">EQUIPO / TECNOLOGÍA</th><th className="p-4 font-bold border-b">MARCA</th><th className="p-4 font-bold border-b">MODELO</th><th className="p-4 font-bold border-b">SERIE</th>
+                          <th className="p-4 font-bold border-b">NO. INV.</th>
+                          <th className="p-4 font-bold border-b">EQUIPO / TECNOLOGÍA</th>
+                          <th className="p-4 font-bold border-b">MARCA</th>
+                          <th className="p-4 font-bold border-b">MODELO</th>
+                          <th className="p-4 font-bold border-b">SERIE</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1039,9 +1250,19 @@
                           <tr><td colSpan="5" className="p-8 text-center text-gray-500">No se encontraron equipos con esos criterios.</td></tr>
                         )}
                         {equiposFiltrados.map((equipo) => (
-                          <tr key={equipo.id} onClick={() => setSelectedEquipo(equipo)} className="border-b border-gray-50 hover:bg-blue-50/50 transition cursor-pointer text-sm group">
-                            <td className="p-4"><span className={`px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider shadow-sm transition-colors ${getEstatusColor(equipo.estatus)}`}>{equipo.numeroInventario || 'S/N'}</span></td>
-                            <td className="p-4 font-medium group-hover:text-blue-700 transition-colors">{equipo.nombre}</td>
+                          <tr 
+                            key={equipo.id} 
+                            onClick={() => setSelectedEquipo(equipo)}
+                            className="border-b border-gray-50 hover:bg-blue-50/50 transition cursor-pointer text-sm group"
+                          >
+                            <td className="p-4">
+                              <span className={`px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider shadow-sm transition-colors ${getEstatusColor(equipo.estatus)}`}>
+                                {equipo.numeroInventario || 'S/N'}
+                              </span>
+                            </td>
+                            <td className="p-4 font-medium group-hover:text-blue-700 transition-colors">
+                              {equipo.nombre}
+                            </td>
                             <td className="p-4 text-gray-600">{equipo.marca || '-'}</td>
                             <td className="p-4 text-gray-600">{equipo.modelo || '-'}</td>
                             <td className="p-4 text-gray-500 font-mono text-xs">{equipo.numeroSerie || '-'}</td>
@@ -1067,15 +1288,21 @@
                 </div>
                 
                 <nav className="flex-1 p-4 space-y-2">
-                  <button onClick={() => {setActiveTab('dashboard'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-columns w-5 text-center"></i> Dashboard</button>
-                  <button onClick={() => {setActiveTab('equipos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'equipos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-stethoscope w-5 text-center"></i> Inventario</button>
-                  <button onClick={() => {setActiveTab('calendarios'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'calendarios' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="far fa-calendar-alt w-5 text-center"></i> Calendarios</button>
+                  <button onClick={() => {setActiveTab('dashboard'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
+                    <i className="fas fa-columns w-5 text-center"></i> Dashboard
+                  </button>
+                  <button onClick={() => {setActiveTab('equipos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'equipos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
+                    <i className="fas fa-stethoscope w-5 text-center"></i> Inventario
+                  </button>
+                  <button onClick={() => {setActiveTab('calendarios'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'calendarios' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
+                    <i className="far fa-calendar-alt w-5 text-center"></i> Calendarios
+                  </button>
                 </nav>
               </aside>
 
               <main className="flex-1 p-0 md:p-6 overflow-y-auto relative">
                 <div className={`max-w-7xl mx-auto h-full ${activeTab === 'dashboard' ? 'p-0 md:p-0' : ''}`}>
-                  {activeTab === 'dashboard' && <IndicadoresDashboard />}
+                  {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} />}
                   {activeTab === 'equipos' && renderEquipos()}
                   {activeTab === 'calendarios' && renderCalendarios()}
                 </div>
@@ -1118,7 +1345,10 @@
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={nuevoEquipo.nivelRiesgo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={nuevoEquipo.proveedorMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={nuevoEquipo.fechaAlta} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div className="lg:col-span-3"><label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label><textarea value={nuevoEquipo.descripcion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea></div>
+                        <div className="lg:col-span-3">
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Descripción del Equipo</label>
+                            <textarea value={nuevoEquipo.descripcion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea>
+                        </div>
                       </div>
                       <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
                         <button type="button" onClick={() => setShowAddEquipo(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
