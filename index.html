@@ -5,10 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MediCMMS - Mantenimiento</title>
     
+    <!-- React y ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
@@ -40,6 +47,9 @@
      <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
 
+        // ============================================================================
+        // CONFIGURACIÓN DE GOOGLE SHEETS
+        // ============================================================================
         const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwsPJJ9SQdgz3l8BEDMwpcOT0hYhrfLL3qIdTAYJ7q_Pji5ZBzu_Pt-zmvqcmtokVKi/exec"; 
 
         const motivosOptions = [
@@ -57,6 +67,7 @@
 
         const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
+        // LÓGICA DE PROYECCIONES
         const calcularProximoMantenimiento = (fechaUltimo, frecuencia) => {
             if (!fechaUltimo || !frecuencia) return '';
             const [yearStr, monthStr] = fechaUltimo.split('-');
@@ -95,6 +106,7 @@
             return mesesProgramados;
         };
 
+        // FUNCIÓN SANADORA: Extrae solo el formato AÑO-MES (YYYY-MM)
         const limpiarHistorial = (str) => {
             if (!str) return [];
             return String(str).split(',').map(s => {
@@ -103,6 +115,7 @@
             }).filter(Boolean);
         };
 
+        // LÓGICA DE CUMPLIMIENTO CON ±1 MES DE HOLGURA
         const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
             if (!historialEjecuciones) return false;
             const ejecutados = limpiarHistorial(historialEjecuciones);
@@ -120,19 +133,26 @@
         };
 
         const CMMSHospitalario = () => {
-          const [activeTab, setActiveTab] = useState('dashboard');
+          const [activeTab, setActiveTab] = useState('calendarios');
           const [inventarioTab, setInventarioTab] = useState('Propio');
           const [equipos, setEquipos] = useState([]);
           const [isSyncing, setIsSyncing] = useState(false);
           const [showAddEquipo, setShowAddEquipo] = useState(false);
           
+          // Filtros Inventario
           const [searchTerm, setSearchTerm] = useState('');
           const [filterEstatus, setFilterEstatus] = useState('Todos');
+          
+          // Filtros Calendario
           const [filterUbicacionCal, setFilterUbicacionCal] = useState('Todas');
           const [filterMesCal, setFilterMesCal] = useState('Todos');
+          const [searchTermCal, setSearchTermCal] = useState(''); // NUEVO: Filtro por número de control
           const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+          
+          // Filtro Dashboard
           const [dashYear, setDashYear] = useState(new Date().getFullYear());
 
+          // Edición
           const [selectedEquipo, setSelectedEquipo] = useState(null);
           const [isEditing, setIsEditing] = useState(false);
           const [equipoEditado, setEquipoEditado] = useState(null);
@@ -148,6 +168,7 @@
 
           useEffect(() => { handleSyncSheets(); }, []);
 
+          // Stats para el Dashboard
           const stats = useMemo(() => {
             return {
               total: equipos.length,
@@ -158,6 +179,7 @@
             };
           }, [equipos]);
 
+          // Data para Cumplimiento Mensual (Dashboard)
           const monthlyCompliance = useMemo(() => {
               return mesesAbreviados.map((nombreMes, monthIndex) => {
                   let programados = 0;
@@ -198,20 +220,30 @@
               return equipos.filter(e => {
                   if (e.origen !== inventarioTab) return false;
                   
-                  // REGLA NUEVA: Excluir del calendario equipos sin frecuencia
+                  // Ocultar equipos sin frecuencia configurada
                   if (!e.frecuenciaMantenimiento || e.frecuenciaMantenimiento === '') return false;
                   
+                  // Filtro por Área
                   if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
                   
+                  // Filtro por Mes
                   if (filterMesCal !== 'Todos') {
                       const monthIdx = parseInt(filterMesCal, 10);
                       const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
                       if (!programados.has(monthIdx)) return false;
                   }
+
+                  // NUEVO: Filtro por Número de Control
+                  if (searchTermCal) {
+                      const s = searchTermCal.toLowerCase();
+                      if (!String(e.numeroInventario || '').toLowerCase().includes(s)) return false;
+                  }
+
                   return true;
               });
-          }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, calendarYear]);
+          }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, calendarYear, searchTermCal]);
 
+          // Sincronización Google Sheets
           const handleSyncSheets = async () => {
             setIsSyncing(true);
             if (!GOOGLE_SHEETS_WEBAPP_URL) { setTimeout(() => setIsSyncing(false), 1000); return; }
@@ -270,6 +302,7 @@
             setNuevoEquipo(estadoInicialEquipo);
           };
 
+          // Clic Interactivo en el Calendario
           const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
               const strY = year.toString();
               const strM = (monthIndex + 1).toString().padStart(2, '0');
@@ -283,6 +316,7 @@
                   historialArr.push(targetStr);
               }
 
+              // Eliminar duplicados si los hubiera por el cruce de datos
               historialArr = [...new Set(historialArr)];
 
               const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
@@ -296,6 +330,10 @@
             if (status.includes('fuera de servicio')) return 'bg-red-100 text-red-800 border-red-300';
             return 'bg-gray-100 text-gray-800 border-gray-300'; 
           };
+
+          // ==============================
+          // RENDER COMPONENTS
+          // ==============================
 
           const renderDashboard = () => (
             <div className="space-y-6 animate-in fade-in duration-300">
@@ -380,12 +418,25 @@
                       </div>
 
                       <div className="p-4 border-b border-gray-100 bg-white flex flex-wrap items-center gap-4 print-hidden">
+                          {/* NUEVO FILTRO DE BÚSQUEDA POR CONTROL */}
                           <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i> Filtro Área:</label>
+                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-search mr-1"></i> Control:</label>
+                              <input 
+                                  type="text" 
+                                  value={searchTermCal}
+                                  onChange={(e) => setSearchTermCal(e.target.value)}
+                                  placeholder="Buscar No. Control..."
+                                  className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                              />
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i> Área:</label>
                               <select value={filterUbicacionCal} onChange={(e) => setFilterUbicacionCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
                                   {ubicacionesUnicas.map(ub => <option key={ub} value={ub}>{ub}</option>)}
                               </select>
                           </div>
+                          
                           <div className="flex items-center gap-2 flex-1 min-w-[150px]">
                               <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter mr-1"></i> Mes:</label>
                               <select value={filterMesCal} onChange={(e) => setFilterMesCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
@@ -399,6 +450,7 @@
                           </div>
                       </div>
 
+                      {/* Cabecera Exclusiva para la Impresión */}
                       <div className="hidden print-block p-6 text-center border-b border-gray-200">
                           <h2 className="text-3xl font-bold text-gray-800 mb-2">Calendario de Mantenimiento Preventivo</h2>
                           <p className="text-gray-600 text-lg">
@@ -855,7 +907,7 @@
                 </div>
               </main>
 
-              {}
+              {/* Modal Agregar Equipo */}
               {showAddEquipo && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
