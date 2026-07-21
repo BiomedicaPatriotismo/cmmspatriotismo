@@ -1099,6 +1099,225 @@
                   </div>
 
                   <div className="p-8">
+                    <div className="flex flex-col lg:flex-row justify-between items-start gap-4 mb-8 border-b border-gray-100 pb-6">
+                      <div className="flex-1">
+                        <h2 className="text-3xl font-bold mb-2">{selectedEquipo.nombre || 'Equipo sin nombre'}</h2>
+                        
+                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200 shadow-sm">
+                                <i className="fas fa-wrench mr-2"></i> {freqText}
+                            </span>
+                            {selectedEquipo.ultimoMantenimiento && (
+                                <span className="text-gray-600 font-medium flex items-center bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                                    <i className="far fa-calendar-check mr-2 text-gray-400"></i> Último Base: {selectedEquipo.ultimoMantenimiento}
+                                </span>
+                            )}
+                            {selectedEquipo.proximoMantenimiento && (
+                                <span className="text-emerald-700 font-bold flex items-center bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                                    <i className="fas fa-arrow-right mx-2 text-emerald-400"></i> Próximo Est.: {selectedEquipo.proximoMantenimiento}
+                                </span>
+                            )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-end gap-3 min-w-[250px]">
+                        <span className={`px-4 py-2 rounded-lg border font-bold text-lg text-center shadow-sm w-full ${getEstatusColor(selectedEquipo.estatus)}`}>
+                          {selectedEquipo.numeroInventario || 'Sin No. Inv'}
+                        </span>
+                        
+                        <div className="w-full bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest"><i className="fas fa-exchange-alt mr-1"></i> Estatus:</label>
+                            <select 
+                              value={selectedEquipo.estatus} 
+                              onChange={(e) => {
+                                  const updated = { ...selectedEquipo, estatus: e.target.value };
+                                  if (e.target.value === 'En Servicio') updated.motivoFueraServicio = '';
+                                  else updated.motivoFueraServicio = motivosOptions[0];
+                                  setSelectedEquipo(updated);
+                                  setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+                                  directSaveToSheets(updated);
+                              }}
+                              className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${
+                                selectedEquipo.estatus === 'En Servicio' ? 'text-emerald-700' : 'text-red-700'
+                              }`}
+                            >
+                              <option value="En Servicio" className="text-emerald-700 font-bold">En Servicio</option>
+                              <option value="Fuera de Servicio" className="text-red-700 font-bold">Fuera de Servicio</option>
+                            </select>
+                          </div>
+                          
+                          {selectedEquipo.estatus === 'Fuera de Servicio' && (
+                            <div className="flex flex-col gap-1 mt-1 border-t border-gray-100 pt-2 animate-in fade-in">
+                              <label className="text-[10px] font-bold text-red-500 uppercase">Motivo:</label>
+                              <select 
+                                value={selectedEquipo.motivoFueraServicio || ''} 
+                                onChange={(e) => {
+                                    const updated = { ...selectedEquipo, motivoFueraServicio: e.target.value };
+                                    setSelectedEquipo(updated);
+                                    setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+                                    directSaveToSheets(updated);
+                                }}
+                                className="text-xs font-medium border border-red-200 rounded p-1.5 text-red-700 bg-red-50 w-full outline-none"
+                              >
+                                <option value="" disabled>Seleccione un motivo...</option>
+                                {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8">
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Categoría</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.tipoTecnologia || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Marca</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.marca || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Modelo / Versión</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.modelo || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Número de Serie</p>
+                        <p className="text-gray-800 font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Ubicación Física</p>
+                        <p className="text-gray-800 font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fabricante</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.fabricante || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p>
+                        <p className="text-gray-800 font-medium">
+                          {selectedEquipo.polizaMantenimiento === 'Sí' ? 
+                            <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : 
+                            <span className="text-gray-500">Sin Póliza</span>}
+                        </p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Proveedor Mantenimiento</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.nivelRiesgo || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta al Inventario</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p>
+                      </div>
+                      <div className="lg:col-span-3 mt-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p>
+                        <p className="text-gray-700 bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">
+                            {selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <i className="fas fa-stethoscope text-blue-600"></i> Hojas de Inventario
+                  </h2>
+                  
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm">
+                      <i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> 
+                      {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}
+                    </button>
+                    
+                    <button onClick={() => { setNuevoEquipo({...estadoInicialEquipo, origen: inventarioTab}); setShowAddEquipo(true); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm">
+                      <i className="fas fa-plus"></i> Agregar Equipo
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto">
+                    <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
+                    <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
+                    <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
+                  </div>
+
+                  <div className="p-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                      <input 
+                        type="text" 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder={`Buscar en ${inventarioTab.toLowerCase()} (Nombre, Marca, Serie, Inv)...`} 
+                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" 
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter"></i> Filtro Estatus:</label>
+                        <select 
+                            value={filterEstatus}
+                            onChange={(e) => setFilterEstatus(e.target.value)}
+                            className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                        >
+                            <option value="Todos">Mostrar Todos</option>
+                            <option value="En Servicio">Sólo En Servicio</option>
+                            <option value="Fuera de Servicio">Sólo Fuera de Servicio</option>
+                        </select>
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse whitespace-nowrap">
+                      <thead>
+                        <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
+                          <th className="p-4 font-bold border-b">NO. INV.</th>
+                          <th className="p-4 font-bold border-b">EQUIPO / TECNOLOGÍA</th>
+                          <th className="p-4 font-bold border-b">MARCA</th>
+                          <th className="p-4 font-bold border-b">MODELO</th>
+                          <th className="p-4 font-bold border-b">SERIE</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {equiposFiltrados.length === 0 && (
+                          <tr><td colSpan="5" className="p-8 text-center text-gray-500">No se encontraron equipos con esos criterios.</td></tr>
+                        )}
+                        {equiposFiltrados.map((equipo) => (
+                          <tr 
+                            key={equipo.id} 
+                            onClick={() => setSelectedEquipo(equipo)}
+                            className="border-b border-gray-50 hover:bg-blue-50/50 transition cursor-pointer text-sm group"
+                          >
+                            <td className="p-4">
+                              <span className={`px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider shadow-sm transition-colors ${getEstatusColor(equipo.estatus)}`}>
+                                {equipo.numeroInventario || 'S/N'}
+                              </span>
+                            </td>
+                            <td className="p-4 font-medium group-hover:text-blue-700 transition-colors">
+                              {equipo.nombre}
+                            </td>
+                            <td className="p-4 text-gray-600">{equipo.marca || '-'}</td>
+                            <td className="p-4 text-gray-600">{equipo.modelo || '-'}</td>
+                            <td className="p-4 text-gray-500 font-mono text-xs">{equipo.numeroSerie || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          };
 
           return (
             <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
