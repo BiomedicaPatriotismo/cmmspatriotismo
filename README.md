@@ -1,97 +1,82 @@
-🏥 MediCMMS - Sistema de Gestión de Mantenimiento Clínico
+# CMMS Biomédico — HSAIP
 
-MediCMMS es una aplicación web ligera y "Serverless" diseñada específicamente para Departamentos de Ingeniería Biomédica. Permite la gestión integral del inventario de equipos médicos, el control del mantenimiento preventivo/correctivo y la visualización de indicadores clave de rendimiento (KPIs) en tiempo real.
+Sistema de gestión de mantenimiento de equipo médico.
+Ingeniería Biomédica y Tecnovigilancia · Hospital San Ángel Inn Patriotismo
 
-El sistema utiliza Google Sheets como base de datos, permitiendo una integración sencilla, gratuita y colaborativa.
+## Archivos
 
-✨ Características Principales
+| Archivo | Destino |
+|---|---|
+| `index.html` | GitHub Pages (raíz del repositorio) |
+| `Codigo.gs` | Editor de Google Apps Script |
 
-📊 Dashboard de Indicadores Avanzado (Dark Mode): Visualización de KPIs críticos (Cumplimiento de MP, MTTR, Tiempo de inactividad, Gasto presupuestal) con soporte para vistas mensuales y acumulado anual.
+---
 
-📋 Gestión de Inventario: Control de equipos divididos por origen (Propio, Comodato, Renta). Permite altas, ediciones y categorización de estatus (En Servicio / Fuera de Servicio).
+## Instalación
 
-🗓️ Calendario Preventivo Interactivo: * Cálculo automático de próximos mantenimientos basado en la frecuencia (Mensual, Trimestral, Anual, etc.).
+### 1. Backend (Google Apps Script)
 
-Interfaz de un clic para marcar/desmarcar mantenimientos ejecutados.
+1. Abre tu hoja de cálculo → **Extensiones → Apps Script**
+2. Borra todo el contenido y pega `Codigo.gs`
+3. En la **línea 27**, sustituye `PEGA_AQUI_EL_ID_DE_TU_HOJA` por el ID de tu hoja.
+   El ID está en la URL: `docs.google.com/spreadsheets/d/`**`ESTE_ES_EL_ID`**`/edit`
+4. Ejecuta la función `pruebaConexion` una vez y autoriza los permisos.
+   Revisa el registro: debe listar tus hojas y encabezados.
+5. **Implementar → Nueva implementación → Aplicación web**
+   - Ejecutar como: **Yo**
+   - Quién tiene acceso: **Cualquier usuario**  ← crítico
+6. Copia la URL `/exec` generada.
 
-Código de colores inteligente (Azul: Programado, Verde: Ejecutado, Rojo: Fuera de servicio).
+> Cada vez que edites el script debes crear una **nueva versión** de la
+> implementación, o los cambios no se reflejarán.
 
-Cálculo de porcentaje de cumplimiento en tiempo real con tolerancia de holgura (±1 mes).
+### 2. Frontend
 
-🖨️ Reportes Listos para Imprimir: Estilos CSS optimizados para exportar el Dashboard y el Calendario a PDF o papel sin elementos de la interfaz innecesarios.
+En `index.html`, línea ~114, pega la URL en `GOOGLE_SHEETS_WEBAPP_URL`.
+Sube el archivo al repositorio y activa GitHub Pages.
 
-🛠️ Stack Tecnológico
+---
 
-Este proyecto está construido para ejecutarse directamente en el navegador sin necesidad de servidores o compilación local (Node.js):
+## Correcciones aplicadas (Rev. 02)
 
-Frontend: React 18 (Vía CDN), HTML5, Babel (Standalone).
+| # | Problema | Solución |
+|---|---|---|
+| 01 | Apps Script no envía encabezados CORS; el navegador bloqueaba la respuesta y el inventario quedaba vacío sin aviso | Transporte JSONP |
+| 02 | `getActiveSpreadsheet()` devuelve null en Web App | `openById()` |
+| 03 | `normalizeHeader` convertía `ÚLTIMO MANTENIMIENTO` en `uLTIMOMANTENIMIENTO`; el calendario no encontraba los campos y filtraba todo | Mapa explícito de encabezados |
+| 04 | Fechas llegaban como ISO (`2026-03-15T06:00:00Z`) y `split('-')` daba mes 15 | Formato forzado `yyyy-MM` |
+| 05 | Escrituras simultáneas se sobrescribían | `LockService` |
+| 06 | `id: "Propio-undefined"` provocaba edición de la fila equivocada | ID garantizado + `_fila` |
+| 07 | Errores silenciados en `catch` | Banner visible + reintentos + rollback |
 
-Estilos: Tailwind CSS (Vía CDN).
+## Funciones nuevas
 
-Gráficas e Iconos: Chart.js, FontAwesome 6.
+- **Bitácora** (`Bitacora`): folio automático `MP-2026-0001`, técnico responsable, hallazgos, refacciones, tiempo de paro.
+- **Tecnovigilancia** (`Tecnovigilancia`): clasificación de evento, paciente involucrado, causa raíz, reporte COFEPRIS — alineado a NOM-240-SSA1-2012.
+- **Auditoría** (`Auditoria`): traza de altas y ediciones con usuario y fecha.
 
-Procesamiento de Datos: PapaParse (para leer CSVs de KPIs).
+Las tres hojas se crean solas la primera vez que se usan.
 
-Backend / Base de Datos: Google Apps Script (GAS) + Google Sheets.
+---
 
-🚀 Instalación y Configuración
+## Diagnóstico
 
-Dado que es una aplicación que se ejecuta del lado del cliente, su alojamiento es sumamente sencillo. Se recomienda usar GitHub Pages.
+Prueba el backend directamente en el navegador:
 
-Paso 1: Configurar Google Sheets (Base de Datos)
+```
+https://TU_URL/exec?action=ping
+```
 
-Crea un nuevo archivo de Google Sheets.
+| Resultado | Causa |
+|---|---|
+| `{"ok":true,...}` | Backend correcto |
+| Pantalla de login de Google | Acceso ≠ "Cualquier usuario" (paso 5) |
+| `Configura SPREADSHEET_ID` | Falta el paso 3 |
 
-Crea tres hojas con los nombres exactos: Propio, Comodato y Renta.
+Si `?action=getAll` devuelve arreglos vacíos, verifica que las hojas se llamen exactamente **Propio**, **Comodato** y **Renta**.
 
-Ve a Extensiones > Apps Script y pega el código backend correspondiente (Code.gs).
+## Frecuencias
 
-Haz clic en Implementar > Nueva implementación.
+`M` mensual · `B` bimestral · `T` trimestral · `C` cuatrimestral · `S` semestral · `A` anual
 
-Selecciona el tipo "Aplicación Web".
-
-Configuración: Ejecutar como "Tú", Quién tiene acceso "Cualquier persona".
-
-Copia la URL de la aplicación web.
-
-Paso 2: Configurar la URL de los Indicadores (CSV)
-
-Crea una hoja de cálculo para tus indicadores mensuales.
-
-Ve a Archivo > Compartir > Publicar en la web.
-
-Selecciona la hoja específica y el formato CSV. Copia ese enlace.
-
-Paso 3: Configurar el Frontend
-
-Clona o descarga este repositorio.
-
-Abre el archivo index.html.
-
-Localiza la sección de CONFIGURACIÓN GLOBAL (aprox. línea 80).
-
-Reemplaza las variables con tus enlaces:
-
-const GOOGLE_SHEETS_WEBAPP_URL = "TU_URL_DE_APPS_SCRIPT_AQUI"; 
-const GOOGLE_SHEET_CSV_URL = "TU_URL_CSV_PUBLICADO_AQUI";
-
-
-Paso 4: Despliegue en GitHub Pages
-
-Sube tu archivo index.html modificado a tu repositorio de GitHub.
-
-Ve a la pestaña Settings > Pages.
-
-En la sección "Build and deployment", elige la rama main.
-
-¡Guarda! En un par de minutos, tu aplicación estará en vivo en tu URL de GitHub Pages.
-
-📱 Uso Básico
-
-Pestaña Dashboard: Selecciona el mes en la parte superior derecha para ver los indicadores específicos, o presiona "Vista Anual" para ver el consolidado. Al fondo verás el cálculo dinámico de cumplimiento preventivo.
-
-Pestaña Inventario: Busca, filtra y edita equipos. Si cambias el estatus a "Fuera de Servicio", se requerirá un motivo.
-
-Pestaña Calendarios: Visualiza el año en curso. Haz clic en las celdas azules para marcar los mantenimientos como ejecutados (se tornarán verdes con una palomita).
-
-Desarrollado para optimizar la gestión de Ingeniería Clínica.
+Formato de `ULTIMO MANTENIMIENTO`: `AAAA-MM` (texto plano recomendado).

@@ -117,6 +117,67 @@
 
         const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
+        // ============================================================================
+        // [FIX-01] CAPA DE TRANSPORTE JSONP
+        // ----------------------------------------------------------------------------
+        // Google Apps Script (ContentService) NO devuelve encabezados CORS.
+        // Un fetch() normal desde GitHub Pages es bloqueado por el navegador y
+        // response.json() lanza excepción -> el inventario quedaba vacío en silencio.
+        // JSONP inyecta un <script>, que no está sujeto a la política CORS.
+        // ============================================================================
+        let __jsonpId = 0;
+
+        const jsonpRequest = (params, timeoutMs = 30000) => {
+            return new Promise((resolve, reject) => {
+                const cbName = `__cmms_cb_${Date.now()}_${__jsonpId++}`;
+                const script = document.createElement('script');
+                let terminado = false;
+
+                const limpiar = () => {
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+                };
+
+                const temporizador = setTimeout(() => {
+                    if (terminado) return;
+                    terminado = true; limpiar();
+                    reject(new Error('Tiempo de espera agotado. Verifica la URL del Apps Script y que la implementación esté como "Cualquier usuario".'));
+                }, timeoutMs);
+
+                window[cbName] = (data) => {
+                    if (terminado) return;
+                    terminado = true;
+                    clearTimeout(temporizador); limpiar();
+                    if (data && data.error) reject(new Error(data.error));
+                    else resolve(data);
+                };
+
+                const qs = new URLSearchParams({ ...params, callback: cbName }).toString();
+                script.src = `${GOOGLE_SHEETS_WEBAPP_URL}?${qs}`;
+                script.onerror = () => {
+                    if (terminado) return;
+                    terminado = true;
+                    clearTimeout(temporizador); limpiar();
+                    reject(new Error('No se pudo contactar el backend. Revisa la URL de implementación.'));
+                };
+                document.body.appendChild(script);
+            });
+        };
+
+        // Reintentos con espera progresiva: absorbe cuotas y cortes de red del hospital
+        const jsonpConReintentos = async (params, intentos = 3) => {
+            let ultimoError;
+            for (let i = 0; i < intentos; i++) {
+                try {
+                    return await jsonpRequest(params);
+                } catch (err) {
+                    ultimoError = err;
+                    if (i < intentos - 1) await new Promise(r => setTimeout(r, 1200 * (i + 1)));
+                }
+            }
+            throw ultimoError;
+        };
+
         const motivosOptions = [
             "PENDIENTE DE CALIBRACION", "EN MANTENIMIENTO PREVENTIVO", "EN REPARACION", 
             "EN ESPERA DE REFACCIONES", "DAÑO SIN POSIBILIDAD DE REPARACION", "PRESTADO", 
@@ -635,6 +696,16 @@
           const [inventarioTab, setInventarioTab] = useState('Propio');
           const [equipos, setEquipos] = useState([]);
           const [isSyncing, setIsSyncing] = useState(false);
+          const [syncError, setSyncError] = useState(null);
+          const [ultimaSync, setUltimaSync] = useState(null);
+          const [bitacora, setBitacora] = useState([]);
+          // Técnico responsable: se adjunta a cada folio de bitácora (trazabilidad)
+          const [tecnicoActivo, setTecnicoActivo] = useState(() => {
+            try { return window.localStorage.getItem('cmms_tecnico') || ''; } catch (e) { return ''; }
+          });
+          useEffect(() => {
+            try { window.localStorage.setItem('cmms_tecnico', tecnicoActivo); } catch (e) {}
+          }, [tecnicoActivo]);
           const [showAddEquipo, setShowAddEquipo] = useState(false);
           
           const [searchTerm, setSearchTerm] = useState('');
@@ -700,51 +771,123 @@
               });
           }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, searchControlCal, calendarYear]);
 
+          // [FIX] Sincronización vía JSONP + errores visibles para el usuario
           const handleSyncSheets = async () => {
             setIsSyncing(true);
-            if (!GOOGLE_SHEETS_WEBAPP_URL) { setTimeout(() => setIsSyncing(false), 1000); return; }
+            setSyncError(null);
+            if (!GOOGLE_SHEETS_WEBAPP_URL) {
+              setSyncError('No hay URL de backend configurada.');
+              setIsSyncing(false);
+              return;
+            }
             try {
-              const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`);
-              const data = await response.json();
-              const procesarHoja = (arr, origen) => (arr || []).filter(e => e.numeroInventario || e.nombre).map(e => ({...e, origen, id: `${origen}-${e.id}`}));
-              setEquipos([...procesarHoja(data.propio, 'Propio'), ...procesarHoja(data.comodato, 'Comodato'), ...procesarHoja(data.renta, 'Renta')]);
-            } catch (error) { console.error(error); } finally { setIsSyncing(false); }
+              const data = await jsonpConReintentos({ action: 'getAll' });
+
+              // [FIX-06] Conserva el id real del backend; ya no genera "Propio-undefined"
+              const procesarHoja = (arr, origen) => (arr || [])
+                .filter(e => e.numeroInventario || e.nombre)
+                .map(e => ({
+                  ...e,
+                  origen,
+                  id: e.id ? String(e.id) : `${origen}-FILA-${e._fila}`
+                }));
+
+              const consolidado = [
+                ...procesarHoja(data.propio, 'Propio'),
+                ...procesarHoja(data.comodato, 'Comodato'),
+                ...procesarHoja(data.renta, 'Renta')
+              ];
+
+              setEquipos(consolidado);
+              setBitacora(data.bitacora || []);
+              setUltimaSync(data.sincronizado || new Date().toLocaleString('es-MX'));
+
+              if (consolidado.length === 0) {
+                setSyncError('El backend respondió correctamente, pero no devolvió equipos. Verifica los nombres de las hojas (Propio, Comodato, Renta) y que tengan datos.');
+              }
+            } catch (error) {
+              console.error(error);
+              setSyncError(error.message || 'Error desconocido al sincronizar.');
+            } finally {
+              setIsSyncing(false);
+            }
           };
 
-          const directSaveToSheets = async (equipo) => {
-             if (GOOGLE_SHEETS_WEBAPP_URL) {
-              try {
-                setIsSyncing(true);
-                await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
-                  method: 'POST', body: JSON.stringify({ action: 'edit', data: equipo, sheetName: equipo.origen, id: equipo.id, originalInventario: equipo.numeroInventario })
-                });
-              } catch (error) { console.error(error); } finally { setIsSyncing(false); }
+          // [FIX] Guardado confirmado: si falla, revierte el estado local
+          const directSaveToSheets = async (equipo, estadoPrevio) => {
+            if (!GOOGLE_SHEETS_WEBAPP_URL) return false;
+            setIsSyncing(true);
+            setSyncError(null);
+            try {
+              await jsonpConReintentos({
+                action: 'save',
+                payload: JSON.stringify({
+                  action: 'edit',
+                  data: equipo,
+                  sheetName: equipo.origen,
+                  originalInventario: equipo.numeroInventario,
+                  fila: equipo._fila
+                })
+              });
+              setUltimaSync(new Date().toLocaleString('es-MX'));
+              return true;
+            } catch (error) {
+              console.error(error);
+              setSyncError('No se guardó en Google Sheets: ' + error.message);
+              // Revierte para que la pantalla no muestre datos que no se persistieron
+              if (estadoPrevio) setEquipos(estadoPrevio);
+              return false;
+            } finally {
+              setIsSyncing(false);
             }
           };
 
           const handleUpdateEquipo = async (e) => {
             e.preventDefault();
+            const estadoPrevio = equipos;
             setEquipos(equipos.map(eq => eq.id === equipoEditado.id ? equipoEditado : eq));
             setSelectedEquipo(equipoEditado);
             setIsEditing(false);
-            directSaveToSheets(equipoEditado);
+            await directSaveToSheets(equipoEditado, estadoPrevio);
           };
 
           const handleAddEquipo = async (e) => {
             e.preventDefault();
-            const id = `${nuevoEquipo.origen}-${Date.now()}`;
+
+            // Validación previa: evita altas incompletas en el inventario
+            if (!nuevoEquipo.numeroInventario || !nuevoEquipo.nombre) {
+              setSyncError('El número de inventario y el nombre del equipo son obligatorios.');
+              return;
+            }
+            const duplicado = equipos.some(eq =>
+              eq.origen === nuevoEquipo.origen &&
+              String(eq.numeroInventario).trim() === String(nuevoEquipo.numeroInventario).trim()
+            );
+            if (duplicado) {
+              setSyncError(`El número de inventario ${nuevoEquipo.numeroInventario} ya existe en ${nuevoEquipo.origen}.`);
+              return;
+            }
+
+            const id = `INV-${nuevoEquipo.numeroInventario}`;
             const numero = equipos.length > 0 ? Math.max(...equipos.map(eq => Number(eq.numero) || 0)) + 1 : 1;
             const equipoGuardar = { ...nuevoEquipo, id, numero };
-            
-            if (GOOGLE_SHEETS_WEBAPP_URL) {
-              try {
-                setIsSyncing(true);
-                await fetch(GOOGLE_SHEETS_WEBAPP_URL, { method: 'POST', body: JSON.stringify({ action: 'add', data: equipoGuardar, sheetName: equipoGuardar.origen }) });
-              } catch (error) {} finally { setIsSyncing(false); }
+
+            setIsSyncing(true);
+            setSyncError(null);
+            try {
+              await jsonpConReintentos({
+                action: 'save',
+                payload: JSON.stringify({ action: 'add', data: equipoGuardar, sheetName: equipoGuardar.origen })
+              });
+              setEquipos([...equipos, equipoGuardar]);
+              setShowAddEquipo(false);
+              setNuevoEquipo(estadoInicialEquipo);
+              setUltimaSync(new Date().toLocaleString('es-MX'));
+            } catch (error) {
+              setSyncError('No se pudo dar de alta el equipo: ' + error.message);
+            } finally {
+              setIsSyncing(false);
             }
-            setEquipos([...equipos, equipoGuardar]);
-            setShowAddEquipo(false);
-            setNuevoEquipo(estadoInicialEquipo);
           };
 
           const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
@@ -757,9 +900,32 @@
               else { historialArr.push(targetStr); }
               historialArr = [...new Set(historialArr)];
 
+              const ejecutando = historialArr.includes(targetStr);
               const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
+              const estadoPrevio = equipos;
               setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
-              directSaveToSheets(updatedEquipo);
+
+              directSaveToSheets(updatedEquipo, estadoPrevio).then(ok => {
+                // [NEW-07] Al marcar ejecutado, levanta folio en bitácora
+                if (ok && ejecutando) {
+                  jsonpConReintentos({
+                    action: 'save',
+                    payload: JSON.stringify({
+                      action: 'bitacora',
+                      data: {
+                        numeroInventario: equipo.numeroInventario,
+                        nombreEquipo: equipo.nombre,
+                        origen: equipo.origen,
+                        ubicacion: equipo.ubicacion,
+                        tipo: 'MP',
+                        periodo: targetStr,
+                        tecnico: tecnicoActivo || 'No especificado',
+                        estatusFinal: 'Concluido'
+                      }
+                    })
+                  }).catch(err => console.error('Bitácora:', err));
+                }
+              });
           };
 
           const getEstatusColor = (estatus) => {
@@ -769,8 +935,36 @@
             return 'bg-gray-100 text-gray-800 border-gray-300'; 
           };
 
+          // Banner de diagnóstico: los fallos ya no son silenciosos
+          const BannerEstado = () => {
+            if (syncError) {
+              return (
+                <div className="print-hidden bg-red-50 border-l-4 border-red-500 p-4 rounded-lg flex items-start gap-3">
+                  <i className="fas fa-triangle-exclamation text-red-600 mt-1"></i>
+                  <div className="flex-1">
+                    <p className="font-bold text-red-800 text-sm">Error de sincronización</p>
+                    <p className="text-red-700 text-sm mt-1">{syncError}</p>
+                  </div>
+                  <button onClick={handleSyncSheets} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 font-medium whitespace-nowrap">Reintentar</button>
+                </div>
+              );
+            }
+            if (equipos.length > 0) {
+              return (
+                <div className="print-hidden bg-emerald-50 border-l-4 border-emerald-500 p-3 rounded-lg flex items-center gap-3 text-sm">
+                  <i className="fas fa-circle-check text-emerald-600"></i>
+                  <span className="text-emerald-800 font-medium">
+                    {equipos.length} equipos sincronizados{ultimaSync ? ` · ${ultimaSync}` : ''}
+                  </span>
+                </div>
+              );
+            }
+            return null;
+          };
+
           const renderCalendarios = () => (
               <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
+                  <BannerEstado />
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print-hidden">
                       <h2 className="text-2xl font-bold flex items-center gap-2">
                         <i className="far fa-calendar-alt text-blue-600"></i> Calendario de Mantenimiento Preventivo
