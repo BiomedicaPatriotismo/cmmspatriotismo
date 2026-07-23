@@ -115,6 +115,28 @@
         const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyctwfWaVlLRZVUH9P-6Z_PvCg_91W1Yc4sgFym72udvRq310JKk8p4GJR22Sqp-Ano/exec"; 
         const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTpv30jyddCIL2Zwwkz_zlEk52O_Aa1iioBPZv90ZnjJ4uy7grVHbIcJQgIRP6xDvLJ53UJ396WfcZE/pub?output=csv";
 
+        // Normaliza Si/SI/Sí/sí/S/1/TRUE -> true. Evita depender de la
+        // escritura exacta capturada en la hoja de cálculo.
+        const esAfirmativo = (v) => {
+            if (v === true) return true;
+            if (v === null || v === undefined) return false;
+            const s = String(v).trim()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toUpperCase();
+            return s === 'SI' || s === 'S' || s === 'TRUE' || s === '1' || s === 'VIGENTE';
+        };
+
+        // Normaliza texto para comparaciones: sin acentos, mayúsculas, sin
+        // espacios extra. La hoja mezcla "En Servicio" y "EN SERVICIO".
+        const normTexto = (v) => String(v || '').trim()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .toUpperCase();
+
+        const estaFueraServicio = (e) => normTexto(e && e.estatus).indexOf('FUERA') > -1;
+        const estaEnServicio = (e) => !estaFueraServicio(e) && normTexto(e && e.estatus).indexOf('SERVICIO') > -1;
+        const esBajaDefinitiva = (e) => normTexto(e && e.motivoFueraServicio) === 'BAJA DEFINITIVA';
+
         const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
         // ============================================================================
@@ -406,12 +428,12 @@
                     let cumplidos = 0;
                     
                     equipos.forEach(equipo => {
-                        if (equipo.motivoFueraServicio === 'BAJA DEFINITIVA') return;
+                        if (esBajaDefinitiva(equipo)) return;
                         
                         const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, dashYear);
                         
                         if (mesesProgramados.has(monthIndex)) {
-                            if (equipo.estatus !== 'Fuera de Servicio') {
+                            if (!estaFueraServicio(equipo)) {
                                 programados++;
                                 if (verificarCumplimiento(equipo.historialEjecuciones, monthIndex, dashYear)) {
                                     cumplidos++;
@@ -722,7 +744,7 @@
           const [equipoEditado, setEquipoEditado] = useState(null);
           
           const estadoInicialEquipo = {
-            origen: inventarioTab, numero: '', numeroInventario: '', estatus: 'En Servicio', motivoFueraServicio: '', nombre: '', marca: '', polizaMantenimiento: 'No', modelo: '', numeroSerie: '', fabricante: '', nivelRiesgo: 'I', ubicacion: '', fechaAlta: '', proveedorMantenimiento: '', descripcion: '', tipoTecnologia: 'Equipo Médico', frecuenciaMantenimiento: '', ultimoMantenimiento: '', proximoMantenimiento: '', historialEjecuciones: ''
+            origen: inventarioTab, numero: '', numeroInventario: '', estatus: 'En Servicio', motivoFueraServicio: '', nombre: '', marca: '', polizaMantenimiento: 'NO', modelo: '', numeroSerie: '', fabricante: '', nivelRiesgo: 'I', ubicacion: '', fechaAlta: '', proveedorMantenimiento: '', descripcion: '', tipoTecnologia: 'Equipo Médico', frecuenciaMantenimiento: '', ultimoMantenimiento: '', proximoMantenimiento: '', historialEjecuciones: ''
           };
           const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
 
@@ -731,7 +753,8 @@
           const equiposFiltrados = useMemo(() => {
             return equipos.filter(e => {
               const matchHoja = e.origen === inventarioTab;
-              const matchEstatus = filterEstatus === 'Todos' || e.estatus === filterEstatus;
+              const matchEstatus = filterEstatus === 'Todos' ||
+                (filterEstatus === 'Fuera de Servicio' ? estaFueraServicio(e) : estaEnServicio(e));
               if (!searchTerm) return matchHoja && matchEstatus;
               const s = searchTerm.toLowerCase();
               return matchHoja && matchEstatus && (
@@ -753,7 +776,7 @@
                   if (!e.frecuenciaMantenimiento || e.frecuenciaMantenimiento === '') return false;
                   
                   // FILTRO: Excluir BAJA DEFINITIVA del calendario
-                  if (e.motivoFueraServicio === 'BAJA DEFINITIVA') return false;
+                  if (esBajaDefinitiva(e)) return false;
 
                   if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
                   
@@ -1041,7 +1064,7 @@
                                           const ejecutadosArr = limpiarHistorial(historialString);
                                           
                                           // Variable para verificar si el equipo está fuera de servicio
-                                          const isFueraServicio = equipo.estatus === 'Fuera de Servicio';
+                                          const isFueraServicio = estaFueraServicio(equipo);
 
                                           const celdas = [0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
                                               const strY = calendarYear.toString();
@@ -1128,7 +1151,7 @@
                           <option value="En Servicio">En Servicio</option><option value="Fuera de Servicio">Fuera de Servicio</option>
                         </select>
                       </div>
-                      {equipoEditado.estatus === 'Fuera de Servicio' && (
+                      {estaFueraServicio(equipoEditado) && (
                         <div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2">
                           <label className="block text-xs font-bold text-red-600 mb-1">Motivo de "Fuera de Servicio"</label>
                           <select value={equipoEditado.motivoFueraServicio} onChange={(e) => setEquipoEditado({...equipoEditado, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">
@@ -1170,7 +1193,7 @@
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={equipoEditado.numeroSerie} onChange={(e) => setEquipoEditado({...equipoEditado, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={equipoEditado.fabricante} onChange={(e) => setEquipoEditado({...equipoEditado, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={equipoEditado.ubicacion} onChange={(e) => setEquipoEditado({...equipoEditado, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={equipoEditado.polizaMantenimiento} onChange={(e) => setEquipoEditado({...equipoEditado, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Sí">Sí</option><option value="No">No</option></select></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={esAfirmativo(equipoEditado.polizaMantenimiento) ? 'SI' : 'NO'} onChange={(e) => setEquipoEditado({...equipoEditado, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="SI">Sí</option><option value="NO">No</option></select></div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={equipoEditado.nivelRiesgo} onChange={(e) => setEquipoEditado({...equipoEditado, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={equipoEditado.proveedorMantenimiento} onChange={(e) => setEquipoEditado({...equipoEditado, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={equipoEditado.fechaAlta ? equipoEditado.fechaAlta.split('T')[0] : ''} onChange={(e) => setEquipoEditado({...equipoEditado, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
@@ -1240,11 +1263,11 @@
                                   if (e.target.value === 'En Servicio') updated.motivoFueraServicio = '';
                                   else updated.motivoFueraServicio = motivosOptions[0];
                                   setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated);
-                              }} className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${selectedEquipo.estatus === 'En Servicio' ? 'text-emerald-700' : 'text-red-700'}`}>
+                              }} className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${estaEnServicio(selectedEquipo) ? 'text-emerald-700' : 'text-red-700'}`}>
                               <option value="En Servicio" className="text-emerald-700 font-bold">En Servicio</option><option value="Fuera de Servicio" className="text-red-700 font-bold">Fuera de Servicio</option>
                             </select>
                           </div>
-                          {selectedEquipo.estatus === 'Fuera de Servicio' && (
+                          {estaFueraServicio(selectedEquipo) && (
                             <div className="flex flex-col gap-1 mt-1 border-t border-gray-100 pt-2 animate-in fade-in">
                               <label className="text-[10px] font-bold text-red-500 uppercase">Motivo:</label>
                               <select value={selectedEquipo.motivoFueraServicio || ''} onChange={(e) => {
@@ -1265,7 +1288,7 @@
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Número de Serie</p><p className="font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p></div>
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Ubicación Física</p><p className="font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p></div>
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fabricante</p><p className="font-medium">{selectedEquipo.fabricante || '-'}</p></div>
-                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p><p className="font-medium">{selectedEquipo.polizaMantenimiento === 'Sí' ? <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : <span className="text-gray-500">Sin Póliza</span>}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p><p className="font-medium">{esAfirmativo(selectedEquipo.polizaMantenimiento) ? <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : <span className="text-gray-500">Sin Póliza</span>}</p></div>
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Proveedor Mantenimiento</p><p className="font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p></div>
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p><p className="font-medium">{selectedEquipo.nivelRiesgo || '-'}</p></div>
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta</p><p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p></div>
@@ -1379,7 +1402,7 @@
                         <div className="lg:col-span-2"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label><input required type="text" value={nuevoEquipo.nombre} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label><select value={nuevoEquipo.tipoTecnologia} onChange={(e) => setNuevoEquipo({...nuevoEquipo, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Equipo Médico">Equipo Médico</option><option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option><option value="Infraestructura">Infraestructura</option></select></div>
                         <div><label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label><select required value={nuevoEquipo.estatus} onChange={(e) => setNuevoEquipo({...nuevoEquipo, estatus: e.target.value, motivoFueraServicio: e.target.value === 'En Servicio' ? '' : motivosOptions[0]})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="En Servicio">En Servicio</option><option value="Fuera de Servicio">Fuera de Servicio</option></select></div>
-                        {nuevoEquipo.estatus === 'Fuera de Servicio' && (<div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2"><label className="block text-xs font-bold text-red-600 mb-1">Motivo de "Fuera de Servicio"</label><select value={nuevoEquipo.motivoFueraServicio} onChange={(e) => setNuevoEquipo({...nuevoEquipo, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">{motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}</select></div>)}
+                        {estaFueraServicio(nuevoEquipo) && (<div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2"><label className="block text-xs font-bold text-red-600 mb-1">Motivo de "Fuera de Servicio"</label><select value={nuevoEquipo.motivoFueraServicio} onChange={(e) => setNuevoEquipo({...nuevoEquipo, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">{motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}</select></div>)}
                         <div className="lg:col-span-3 border-t border-gray-200 my-2 pt-4">
                             <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Mantenimiento Preventivo</h4>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1393,7 +1416,7 @@
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={nuevoEquipo.numeroSerie} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={nuevoEquipo.fabricante} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={nuevoEquipo.ubicacion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={nuevoEquipo.polizaMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Sí">Sí</option><option value="No">No</option></select></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={esAfirmativo(nuevoEquipo.polizaMantenimiento) ? 'SI' : 'NO'} onChange={(e) => setNuevoEquipo({...nuevoEquipo, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="SI">Sí</option><option value="NO">No</option></select></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={nuevoEquipo.nivelRiesgo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={nuevoEquipo.proveedorMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={nuevoEquipo.fechaAlta} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
