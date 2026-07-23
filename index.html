@@ -728,7 +728,7 @@
           }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, searchControlCal, calendarYear]);
 
           // ==============================================================================
-          // CORRECCIÓN RED: GET REQUEST (Lectura de datos)
+          // NUEVA LÓGICA DE SINCRONIZACIÓN (SÚPER SEGURA Y CON ALERTAS DE ERROR)
           // ==============================================================================
           const handleSyncSheets = async () => {
             setIsSyncing(true);
@@ -738,10 +738,9 @@
                 return; 
             }
             try {
-              // CORRECCIÓN: Agregado redirect: 'follow'
               const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`, {
                   method: 'GET',
-                  redirect: 'follow' 
+                  mode: 'cors'
               });
               
               if (!response.ok) {
@@ -776,7 +775,7 @@
                   ...procesarHoja(safeComodato, 'Comodato'), 
                   ...procesarHoja(safeRenta, 'Renta')
               ]);
-              
+              // Cargar el historial de Jotform de manera segura
               if (data.historial && Array.isArray(data.historial)) {
                   setHistorialGlobal(data.historial);
               } else {
@@ -785,15 +784,16 @@
 
             } catch (error) { 
                 console.error("Error de Red al sincronizar:", error); 
-                alert("⚠️ Error de Red: No se pudo conectar con tu Google Sheets. Verifica tu conexión a internet o la URL del script.");
+                if (error.message === "Failed to fetch") {
+                    alert("⚠️ Bloqueo de Google (CORS): Google impidió la conexión.\n\n1. Asegúrate de que publicaste el script para 'Cualquier persona' (NO 'Cualquier persona con cuenta de Google').\n2. Revisa que actualizaste la URL en tu index.html en GitHub.");
+                } else {
+                    alert("⚠️ Error de Red: " + error.message);
+                }
             } finally { 
                 setIsSyncing(false); 
             }
           };
 
-          // ==============================================================================
-          // CORRECCIÓN RED: POST REQUEST (Envío de datos - Edición)
-          // ==============================================================================
           const directSaveToSheets = async (equipo) => {
              if (GOOGLE_SHEETS_WEBAPP_URL) {
               try {
