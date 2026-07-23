@@ -671,6 +671,7 @@
           const [activeTab, setActiveTab] = useState('dashboard');
           const [inventarioTab, setInventarioTab] = useState('Propio');
           const [equipos, setEquipos] = useState([]);
+          const [historialGlobal, setHistorialGlobal] = useState([]); // AÑADIDO: ESTADO PARA EL HISTORIAL DE OS
           const [isSyncing, setIsSyncing] = useState(false);
           const [showAddEquipo, setShowAddEquipo] = useState(false);
           
@@ -737,15 +738,66 @@
               });
           }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, searchControlCal, calendarYear]);
 
+          // ==============================================================================
+          // NUEVA LÓGICA DE SINCRONIZACIÓN (SÚPER SEGURA Y CON ALERTAS DE ERROR)
+          // ==============================================================================
           const handleSyncSheets = async () => {
             setIsSyncing(true);
-            if (!GOOGLE_SHEETS_WEBAPP_URL) { setTimeout(() => setIsSyncing(false), 1000); return; }
+            if (!GOOGLE_SHEETS_WEBAPP_URL) { 
+                alert("⚠️ Error de Configuración: Falta la URL de GOOGLE_SHEETS_WEBAPP_URL en tu código.");
+                setIsSyncing(false); 
+                return; 
+            }
             try {
               const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`);
-              const data = await response.json();
-              const procesarHoja = (arr, origen) => (arr || []).filter(e => e.numeroInventario || e.nombre).map(e => ({...e, origen, id: `${origen}-${e.id}`}));
-              setEquipos([...procesarHoja(data.propio, 'Propio'), ...procesarHoja(data.comodato, 'Comodato'), ...procesarHoja(data.renta, 'Renta')]);
-            } catch (error) { console.error(error); } finally { setIsSyncing(false); }
+              
+              if (!response.ok) {
+                  throw new Error(`Error HTTP: ${response.status}`);
+              }
+              
+              const text = await response.text();
+              let data;
+              try {
+                  data = JSON.parse(text);
+              } catch (e) {
+                  console.error("Respuesta no válida del servidor:", text);
+                  alert("⚠️ Error Fatal: Google Apps Script no devolvió información válida. Comprueba que publicaste la implementación como 'Cualquier persona'.");
+                  setIsSyncing(false);
+                  return;
+              }
+
+              if (data.error) {
+                  alert("⚠️ Error reportado por el servidor: " + data.error);
+                  setIsSyncing(false);
+                  return;
+              }
+
+              // Lectura extra segura de las tablas para evitar que la página colapse
+              const safePropio = Array.isArray(data.propio) ? data.propio : [];
+              const safeComodato = Array.isArray(data.comodato) ? data.comodato : [];
+              const safeRenta = Array.isArray(data.renta) ? data.renta : [];
+              
+              const procesarHoja = (arr, origen) => arr.filter(e => e && (e.numeroInventario || e.nombre)).map((e, idx) => ({...e, origen, id: `${origen}-${e.id || idx}`}));
+              
+              setEquipos([
+                  ...procesarHoja(safePropio, 'Propio'), 
+                  ...procesarHoja(safeComodato, 'Comodato'), 
+                  ...procesarHoja(safeRenta, 'Renta')
+              ]);
+              
+              // Cargar el historial de Jotform de manera segura
+              if (data.historial && Array.isArray(data.historial)) {
+                  setHistorialGlobal(data.historial);
+              } else {
+                  setHistorialGlobal([]);
+              }
+
+            } catch (error) { 
+                console.error("Error de Red al sincronizar:", error); 
+                alert("⚠️ Error de Red: No se pudo conectar con tu Google Sheets. Verifica tu conexión a internet o la URL del script.");
+            } finally { 
+                setIsSyncing(false); 
+            }
           };
 
           const directSaveToSheets = async (equipo) => {
@@ -950,25 +1002,36 @@
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
                   <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                     <div className="flex items-center gap-3">
-                      <button onClick={() => setIsEditing(false)} className="text-gray-500 hover:text-blue-600 transition"><i className="fas fa-arrow-left text-xl"></i></button>
+                      <button onClick={() => setIsEditing(false)} className="text-gray-500 hover:text-blue-600 transition">
+                        <i className="fas fa-arrow-left text-xl"></i>
+                      </button>
                       <h2 className="text-xl font-bold text-gray-800">Editar Equipo: {equipoEditado.numeroInventario}</h2>
                     </div>
                   </div>
                   
                   <form onSubmit={handleUpdateEquipo} className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div><label className="block text-xs font-bold text-gray-700 mb-1">Núm. de Inventario Interno *</label><input required type="text" value={equipoEditado.numeroInventario} onChange={(e) => setEquipoEditado({...equipoEditado, numeroInventario: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div className="lg:col-span-2"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label><input required type="text" value={equipoEditado.nombre} onChange={(e) => setEquipoEditado({...equipoEditado, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Núm. de Inventario Interno *</label>
+                        <input required type="text" value={equipoEditado.numeroInventario} onChange={(e) => setEquipoEditado({...equipoEditado, numeroInventario: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                      </div>
+                      <div className="lg:col-span-2">
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label>
+                        <input required type="text" value={equipoEditado.nombre} onChange={(e) => setEquipoEditado({...equipoEditado, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                      </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label>
                         <select value={equipoEditado.tipoTecnologia} onChange={(e) => setEquipoEditado({...equipoEditado, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                          <option value="Equipo Médico">Equipo Médico</option><option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option><option value="Infraestructura">Infraestructura</option>
+                          <option value="Equipo Médico">Equipo Médico</option>
+                          <option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option>
+                          <option value="Infraestructura">Infraestructura</option>
                         </select>
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label>
                         <select required value={equipoEditado.estatus} onChange={(e) => setEquipoEditado({...equipoEditado, estatus: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                          <option value="En Servicio">En Servicio</option><option value="Fuera de Servicio">Fuera de Servicio</option>
+                          <option value="En Servicio">En Servicio</option>
+                          <option value="Fuera de Servicio">Fuera de Servicio</option>
                         </select>
                       </div>
                       {equipoEditado.estatus === 'Fuera de Servicio' && (
@@ -1042,13 +1105,38 @@
 
             if (selectedEquipo) {
               const freqText = frecuenciasOptions.find(f => f.id === selectedEquipo.frecuenciaMantenimiento)?.label || 'No asignada';
+              
+              // LÓGICA DE JOTFORM
+              const handleJotformRedirect = () => {
+                  const formUrl = "https://form.jotform.com/253464903173862";
+                  const params = new URLSearchParams({
+                      equipoName: selectedEquipo.nombre || '',
+                      equipoMarca: selectedEquipo.marca || '',
+                      equipoModelo: selectedEquipo.modelo || '',
+                      equipoSerie: selectedEquipo.numeroSerie || '',
+                      equipoInventario: selectedEquipo.numeroInventario || '',
+                      equipoUbicacion: selectedEquipo.ubicacion || ''
+                  });
+                  window.open(`${formUrl}?${params.toString()}`, '_blank');
+              };
+
+              // Filtrar historial de forma segura
+              const historialEquipo = Array.isArray(historialGlobal) 
+                  ? historialGlobal.filter(h => h.numeroInventario === selectedEquipo.numeroInventario) 
+                  : [];
+
               return (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
                   <div className="p-4 border-b border-gray-100 flex items-center gap-4 bg-gray-50">
                     <button onClick={() => setSelectedEquipo(null)} className="text-gray-500 hover:text-blue-600 transition flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 shadow-sm">
                       <i className="fas fa-arrow-left"></i> Volver al Inventario
                     </button>
+                    
                     <div className="ml-auto flex gap-2">
+                      <button onClick={handleJotformRedirect} className="flex items-center gap-2 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-lg hover:bg-amber-100 transition shadow-sm font-medium text-sm">
+                        <i className="fas fa-wrench"></i> Generar Orden (OS)
+                      </button>
+
                       <button onClick={() => { setEquipoEditado({...selectedEquipo}); setIsEditing(true); }} className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition shadow-sm font-medium text-sm">
                         <i className="fas fa-edit"></i> Editar Información
                       </button>
@@ -1129,31 +1217,31 @@
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8">
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Categoría</p>
-                        <p className="font-medium">{selectedEquipo.tipoTecnologia || '-'}</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.tipoTecnologia || '-'}</p>
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Marca</p>
-                        <p className="font-medium">{selectedEquipo.marca || '-'}</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.marca || '-'}</p>
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Modelo / Versión</p>
-                        <p className="font-medium">{selectedEquipo.modelo || '-'}</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.modelo || '-'}</p>
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Número de Serie</p>
-                        <p className="font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p>
+                        <p className="text-gray-800 font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p>
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Ubicación Física</p>
-                        <p className="font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p>
+                        <p className="text-gray-800 font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p>
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fabricante</p>
-                        <p className="font-medium">{selectedEquipo.fabricante || '-'}</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.fabricante || '-'}</p>
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p>
-                        <p className="font-medium">
+                        <p className="text-gray-800 font-medium">
                           {selectedEquipo.polizaMantenimiento === 'Sí' ? 
                             <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : 
                             <span className="text-gray-500">Sin Póliza</span>}
@@ -1161,22 +1249,74 @@
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Proveedor Mantenimiento</p>
-                        <p className="font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p>
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p>
-                        <p className="font-medium">{selectedEquipo.nivelRiesgo || '-'}</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.nivelRiesgo || '-'}</p>
                       </div>
                       <div className="border-b border-gray-100 pb-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta al Inventario</p>
-                        <p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p>
+                        <p className="text-gray-800 font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p>
                       </div>
                       <div className="lg:col-span-3 mt-4">
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p>
-                        <p className="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">
+                        <p className="text-gray-700 bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">
                             {selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}
                         </p>
                       </div>
+                      
+                      {/* SECCIÓN NUEVA: HISTORIAL DE ÓRDENES DE SERVICIO */}
+                      <div className="lg:col-span-3 mt-6 pt-6 border-t border-gray-100">
+                          <div className="flex justify-between items-center mb-4">
+                              <h3 className="text-lg font-bold text-slate-800 flex items-center">
+                                  <i className="fas fa-history text-blue-600 mr-2"></i> Historial de Órdenes de Servicio
+                              </h3>
+                              <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">Origen: Jotform</span>
+                          </div>
+                          
+                          {historialEquipo.length === 0 ? (
+                              <p className="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg border border-gray-200">No se encontraron órdenes de servicio registradas para este equipo.</p>
+                          ) : (
+                              <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+                                  <table className="w-full text-left border-collapse whitespace-nowrap text-sm">
+                                      <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
+                                          <tr>
+                                              <th className="p-3 border-b font-bold">Fecha</th>
+                                              <th className="p-3 border-b font-bold">Tipo de Servicio</th>
+                                              <th className="p-3 border-b font-bold">Técnico / Realizó</th>
+                                              <th className="p-3 border-b font-bold">Falla / Trabajo</th>
+                                              <th className="p-3 border-b font-bold text-center">Documento</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody>
+                                          {historialEquipo.map((hist, idx) => (
+                                              <tr key={idx} className="border-b border-gray-50 hover:bg-blue-50/50 transition">
+                                                  <td className="p-3 font-medium text-slate-800">{hist.fechaStr}</td>
+                                                  <td className="p-3 text-slate-600">
+                                                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${String(hist.tipoServicio).toLowerCase().includes('preventivo') ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                        {hist.tipoServicio || 'No esp.'}
+                                                    </span>
+                                                  </td>
+                                                  <td className="p-3 text-slate-600">{hist.tecnico || '-'}</td>
+                                                  <td className="p-3 text-slate-500 max-w-[200px] truncate" title={hist.descripcion}>{hist.descripcion || '-'}</td>
+                                                  <td className="p-3 text-center">
+                                                      {hist.linkPDF ? (
+                                                          <a href={hist.linkPDF} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1 rounded border border-red-200 transition text-xs font-bold shadow-sm">
+                                                              <i className="far fa-file-pdf"></i> Ver PDF
+                                                          </a>
+                                                      ) : (
+                                                          <span className="text-xs text-gray-400 italic">Sin Archivo</span>
+                                                      )}
+                                                  </td>
+                                              </tr>
+                                          ))}
+                                      </tbody>
+                                  </table>
+                              </div>
+                          )}
+                      </div>
+                      
                     </div>
                   </div>
                 </div>
@@ -1217,7 +1357,7 @@
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder={`Buscar en ${inventarioTab.toLowerCase()} (Nombre, Marca, Serie, Inv)...`} 
-                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" 
+                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" 
                       />
                     </div>
                     <div className="flex items-center gap-2">
@@ -1260,7 +1400,7 @@
                                 {equipo.numeroInventario || 'S/N'}
                               </span>
                             </td>
-                            <td className="p-4 font-medium group-hover:text-blue-700 transition-colors">
+                            <td className="p-4 text-gray-800 font-medium group-hover:text-blue-700 transition-colors">
                               {equipo.nombre}
                             </td>
                             <td className="p-4 text-gray-600">{equipo.marca || '-'}</td>
@@ -1277,7 +1417,7 @@
           };
 
           return (
-            <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
+            <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans">
               <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10 md:min-h-screen print-hidden">
                 <div className="p-6 border-b border-slate-800 flex items-center gap-3">
                   <div className="bg-blue-500 p-2 rounded-lg w-10 h-10 flex items-center justify-center"><i className="fas fa-thermometer-half text-white text-xl"></i></div>
@@ -1300,66 +1440,13 @@
                 </nav>
               </aside>
 
-              <main className="flex-1 p-0 md:p-6 overflow-y-auto relative">
-                <div className={`max-w-7xl mx-auto h-full ${activeTab === 'dashboard' ? 'p-0 md:p-0' : ''}`}>
+              <main className="flex-1 p-6 md:p-8 overflow-y-auto relative">
+                <div className="max-w-7xl mx-auto">
                   {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} />}
                   {activeTab === 'equipos' && renderEquipos()}
                   {activeTab === 'calendarios' && renderCalendarios()}
                 </div>
               </main>
-
-              {/* Modal Agregar Equipo */}
-              {showAddEquipo && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 text-slate-800">
-                  <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-blue-50">
-                      <div><h3 className="text-lg font-bold">Registrar Nuevo Equipo</h3><p className="text-xs text-blue-600 font-medium mt-1 flex items-center gap-1"><i className="fas fa-database"></i> Se guardará en la hoja: <strong>{nuevoEquipo.origen}</strong></p></div>
-                      <button onClick={() => setShowAddEquipo(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
-                    </div>
-                    
-                    <form onSubmit={handleAddEquipo} className="p-6 overflow-y-auto flex-1">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div className="lg:col-span-3 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
-                          <label className="block text-xs font-bold text-blue-800 mb-1">¿A qué hoja de cálculo pertenece este registro?</label>
-                          <select value={nuevoEquipo.origen} onChange={(e) => setNuevoEquipo({...nuevoEquipo, origen: e.target.value})} className="w-full md:w-1/3 px-3 py-2 border border-blue-200 rounded-lg text-sm font-medium text-blue-900 bg-white"><option value="Propio">Hoja: Equipo Propio</option><option value="Comodato">Hoja: Equipo en Comodato</option><option value="Renta">Hoja: Equipo en Renta</option></select>
-                        </div>
-                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Núm. de Inventario Interno *</label><input required type="text" value={nuevoEquipo.numeroInventario} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroInventario: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej. INV-1234" /></div>
-                        <div className="lg:col-span-2"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label><input required type="text" value={nuevoEquipo.nombre} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label><select value={nuevoEquipo.tipoTecnologia} onChange={(e) => setNuevoEquipo({...nuevoEquipo, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Equipo Médico">Equipo Médico</option><option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option><option value="Infraestructura">Infraestructura</option></select></div>
-                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label><select required value={nuevoEquipo.estatus} onChange={(e) => setNuevoEquipo({...nuevoEquipo, estatus: e.target.value, motivoFueraServicio: e.target.value === 'En Servicio' ? '' : motivosOptions[0]})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="En Servicio">En Servicio</option><option value="Fuera de Servicio">Fuera de Servicio</option></select></div>
-                        {nuevoEquipo.estatus === 'Fuera de Servicio' && (<div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2"><label className="block text-xs font-bold text-red-600 mb-1">Motivo de "Fuera de Servicio"</label><select value={nuevoEquipo.motivoFueraServicio} onChange={(e) => setNuevoEquipo({...nuevoEquipo, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">{motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}</select></div>)}
-                        <div className="lg:col-span-3 border-t border-gray-200 my-2 pt-4">
-                            <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Mantenimiento Preventivo</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div><label className="block text-xs font-bold text-gray-700 mb-1">Frecuencia</label><select value={nuevoEquipo.frecuenciaMantenimiento} onChange={(e) => { const updated = {...nuevoEquipo, frecuenciaMantenimiento: e.target.value}; updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, e.target.value); setNuevoEquipo(updated); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">{frecuenciasOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}</select></div>
-                                <div><label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Último Servicio</label><input type="month" value={nuevoEquipo.ultimoMantenimiento} onChange={(e) => { const updated = {...nuevoEquipo, ultimoMantenimiento: e.target.value}; updated.proximoMantenimiento = calcularProximoMantenimiento(e.target.value, updated.frecuenciaMantenimiento); setNuevoEquipo(updated); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                                <div><label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Próximo (Calculado)</label><input type="month" value={nuevoEquipo.proximoMantenimiento} readOnly className="w-full px-3 py-2 border border-blue-200 bg-blue-50 text-blue-800 font-bold rounded-lg text-sm cursor-not-allowed" /></div>
-                            </div>
-                        </div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Marca</label><input type="text" value={nuevoEquipo.marca} onChange={(e) => setNuevoEquipo({...nuevoEquipo, marca: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Modelo o Versión</label><input type="text" value={nuevoEquipo.modelo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, modelo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={nuevoEquipo.numeroSerie} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={nuevoEquipo.fabricante} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={nuevoEquipo.ubicacion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={nuevoEquipo.polizaMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Sí">Sí</option><option value="No">No</option></select></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={nuevoEquipo.nivelRiesgo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={nuevoEquipo.proveedorMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={nuevoEquipo.fechaAlta} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                        <div className="lg:col-span-3">
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Descripción del Equipo</label>
-                            <textarea value={nuevoEquipo.descripcion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea>
-                        </div>
-                      </div>
-                      <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
-                        <button type="button" onClick={() => setShowAddEquipo(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
-                        <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
-                          {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>} {isSyncing ? 'Guardando...' : 'Guardar y Sincronizar'}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
             </div>
           );
         };
