@@ -1,526 +1,226 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MediCMMS - Mantenimiento e Indicadores</title>
-    
-    <!-- React y ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
-    <!-- Babel -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Chart.js y PapaParse -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-
-    <!-- FontAwesome y Google Fonts -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        dark: '#020617',
-                        panel: '#0f172a',
-                        primary: '#38bdf8', 
-                        success: '#10b981', 
-                        warning: '#f59e0b', 
-                        danger: '#f43f5e',  
-                        annual: '#8b5cf6',  
-                    }
-                }
-            }
-        }
-    </script>
-
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
-            @page { size: landscape; margin: 5mm; }
-            .print-hidden { display: none !important; }
-            .print-block { display: block !important; }
-            main { padding: 0 !important; margin: 0 !important; }
-        }
-        .tabla-cal th, .tabla-cal td { border: 1px solid #1e3a8a; }
-        .tabla-cal th { background-color: #60a5fa !important; color: white !important; font-weight: bold; text-align: center; }
-        .celda-prog { background-color: #3b82f6 !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
-        .celda-fuera-servicio { background-color: #ef4444 !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
-        .celda-ejec { background-color: #22c55e !important; position: relative; }
-        .celda-ejec::after { content: '✓'; color: white; font-size: 14px; font-weight: bold; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
-        .celda-interactiva { min-width: 25px; height: 25px; text-align: center; cursor: pointer; transition: background-color 0.2s; }
-        .celda-interactiva:hover { background-color: #bfdbfe !important; }
-        .dark-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-        .dark-scroll::-webkit-scrollbar-track { background: #0f172a; }
-        .dark-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-    </style>
-</head>
-<body class="bg-slate-50">
-    <div id="root"></div>
-
-    <script type="text/babel">
-        const { useState, useMemo, useEffect, useRef } = React;
-
-        const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwsPJJ9SQdgz3l8BEDMwpcOT0hYhrfLL3qIdTAYJ7q_Pji5ZBzu_Pt-zmvqcmtokVKi/exec"; 
-        const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTpv30jyddCIL2Zwwkz_zlEk52O_Aa1iioBPZv90ZnjJ4uy7grVHbIcJQgIRP6xDvLJ53UJ396WfcZE/pub?output=csv";
-
-        const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
-        const motivosOptions = [
-            "PENDIENTE DE CALIBRACION", "EN MANTENIMIENTO PREVENTIVO", "EN REPARACION", 
-            "EN ESPERA DE REFACCIONES", "DAÑO SIN POSIBILIDAD DE REPARACION", "PRESTADO", 
-            "EN CAMBIO O SUSTITUCION", "BAJA DEFINITIVA"
-        ];
-
-        const frecuenciasOptions = [
-            { id: '', label: 'No aplica / Sin definir' }, { id: 'M', label: 'M - MENSUAL' }, 
-            { id: 'B', label: 'B - BIMESTRAL' }, { id: 'T', label: 'T - TRIMESTRAL' }, 
-            { id: 'C', label: 'C - CUATRIMESTRAL' }, { id: 'S', label: 'S - SEMESTRAL' }, 
-            { id: 'A', label: 'A - ANUAL' }
-        ];
-
-        const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
-
-        // Datos de respaldo seguros para evitar pantallas en blanco si falla Google Sheets
-        const datosPruebaSeguros = [
-            { id: 'Propio-1', origen: 'Propio', numero: 1, numeroInventario: 'INV-101', estatus: 'En Servicio', motivoFueraServicio: '', nombre: 'Monitor de Signos Vitales', marca: 'Philips', modelo: 'IntelliVue', numeroSerie: 'SN-998877', ubicacion: 'Urgencias - Cama 1', frecuenciaMantenimiento: 'M', ultimoMantenimiento: '2026-01', historialEjecuciones: '2026-01' },
-            { id: 'Propio-2', origen: 'Propio', numero: 2, numeroInventario: 'INV-102', estatus: 'En Servicio', motivoFueraServicio: '', nombre: 'Electrocardiógrafo', marca: 'GE', modelo: 'MAC 2000', numeroSerie: 'SN-445566', ubicacion: 'Cardiología', frecuenciaMantenimiento: 'T', ultimoMantenimiento: '2026-02', historialEjecuciones: '' },
-            { id: 'Comodato-1', origen: 'Comodato', numero: 3, numeroInventario: 'CMD-201', estatus: 'Fuera de Servicio', motivoFueraServicio: 'EN REPARACION', nombre: 'Ventilador Mecánico', marca: 'Hamilton', modelo: 'C6', numeroSerie: 'SN-112233', ubicacion: 'UCI - Cama 3', frecuenciaMantenimiento: 'M', ultimoMantenimiento: '2026-01', historialEjecuciones: '' }
-        ];
-
-        const obtenerMesesProgramados = (ultimoMantenimiento, frecuencia, targetYear) => {
-            const mesesProgramados = new Set();
-            if (!ultimoMantenimiento || !frecuencia) return mesesProgramados;
-            const [uYear, uMonth] = ultimoMantenimiento.split('-').map(Number);
-            if (!uYear || !uMonth) return mesesProgramados;
-            let interval = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
-            if (interval === 0) return mesesProgramados;
-            let startMonth = uMonth - 1, startYear = uYear;
-            while (startYear >= targetYear && interval > 0) {
-                startMonth -= interval;
-                while (startMonth < 0) { startMonth += 12; startYear -= 1; }
-            }
-            let simMonth = startMonth, simYear = startYear;
-            for (let i = 0; i < 100; i++) {
-                simMonth += interval;
-                while (simMonth > 11) { simMonth -= 12; simYear += 1; }
-                if (simYear === targetYear) { mesesProgramados.add(simMonth); }
-                else if (simYear > targetYear) { break; }
-            }
-            return mesesProgramados;
-        };
-
-        const calcularProximoMantenimiento = (fechaUltimo, frecuencia) => {
-            if (!fechaUltimo || !frecuencia) return '';
-            const [yearStr, monthStr] = fechaUltimo.split('-');
-            let date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
-            if (isNaN(date.getTime())) return '';
-            let meses = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
-            date.setMonth(date.getMonth() + meses);
-            const m = date.getMonth() + 1;
-            return `${date.getFullYear()}-${m < 10 ? '0' : ''}${m}`; 
-        };
-
-        const limpiarHistorial = (str) => {
-            if (!str) return [];
-            return String(str).split(',').map(s => {
-                const match = s.match(/(\d{4})-(\d{2})/);
-                return match ? match[0] : null;
-            }).filter(Boolean);
-        };
-
-        const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
-            if (!historialEjecuciones) return false;
-            const ejecutados = limpiarHistorial(historialEjecuciones);
-            const formatYM = (y, m) => `${y}-${(m + 1).toString().padStart(2, '0')}`;
-            let pMonth = targetMonthIndex - 1, pYear = targetYear;
-            if (pMonth < 0) { pMonth = 11; pYear--; }
-            let nMonth = targetMonthIndex + 1, nYear = targetYear;
-            if (nMonth > 11) { nMonth = 0; nYear++; }
-            return ejecutados.includes(formatYM(targetYear, targetMonthIndex)) || 
-                   ejecutados.includes(formatYM(pYear, pMonth)) || 
-                   ejecutados.includes(formatYM(nYear, nMonth));
-        };
-
-        // COMPONENTE: DASHBOARD (Mantiene la estructura oscura e intacta)
-        const IndicadoresDashboard = ({ equipos }) => {
-            const [dataSet, setDataSet] = useState({});
-            const [historico, setHistorico] = useState({ meses: [], mp: [], gastoTotal: [] });
-            const [currentMonth, setCurrentMonth] = useState('');
-            const [isAnnualView, setIsAnnualView] = useState(false);
-            const [isLoading, setIsLoading] = useState(true);
-            const [error, setError] = useState(false);
-            const [dashYear, setDashYear] = useState(new Date().getFullYear());
-
-            const downtimeChartRef = useRef(null);
-            const budgetChartRef = useRef(null);
-            const trendChartRef = useRef(null);
-            const expenseTrendChartRef = useRef(null);
-            const ratioChartRef = useRef(null);
-            const chartInstances = useRef({});
-
-            useEffect(() => {
-                Papa.parse(GOOGLE_SHEET_CSV_URL, {
-                    download: true,
-                    header: true,
-                    complete: (results) => {
-                        procesarDatos(results.data);
-                        setIsLoading(false);
-                    },
-                    error: () => {
-                        setError(true);
-                        setIsLoading(false);
-                    }
-                });
-            }, []);
-
-            const procesarDatos = (rows) => {
-                let tempDataSet = {}; 
-                let histMeses = [], histMP = [], histGasto = [];
-                rows.forEach(row => {
-                    const mes = String(row.mes || '').trim().toLowerCase();
-                    if (!mes) return;
-                    const mesFormateado = mes.charAt(0).toUpperCase() + mes.slice(1);
-                    if (!tempDataSet[mes]) {
-                        const raw = {
-                            mp: Number(row.mp_cumplimiento) || 0,
-                            mttr: Number(row.mttr) || 0,
-                            downReso: Number(row.downtime_resonancia) || 0,
-                            downTomo: Number(row.downtime_tomografia) || 0,
-                            downHemo: Number(row.downtime_hemodinamia) || 0,
-                            downRayos: Number(row.downtime_rayos_x) || 0,
-                            presTotalAsig: Number(row.presupuesto_total_asig) || 100,
-                            presTotalEjer: Number(row.presupuesto_total_ejer) || 0,
-                            presMttoAsig: Number(row.presupuesto_mtto_asig) || 100,
-                            presMttoEjer: Number(row.presupuesto_mtto_ejer) || 0,
-                            ratioMP: Number(row.ratio_mp) || 0,
-                            ratioMC: Number(row.ratio_mc) || 0
-                        };
-                        histMeses.push(mesFormateado);
-                        histMP.push(raw.mp);
-                        histGasto.push(raw.presTotalEjer);
-                        const totalDowntime = raw.downReso + raw.downTomo + raw.downHemo + raw.downRayos;
-                        tempDataSet[mes] = {
-                            raw,
-                            kpis: { mp_cumplimiento: raw.mp, mttr: raw.mttr, downtime: totalDowntime, budget_total: (raw.presTotalEjer/raw.presTotalAsig)*100, budget_mxn: raw.presTotalEjer },
-                            finanzas: { asigTotal: raw.presTotalAsig, ejerTotal: raw.presTotalEjer, asigMtto: raw.presMttoAsig, ejerMtto: raw.presMttoEjer },
-                            charts: { ratio_mp: raw.ratioMP, ratio_mc: raw.ratioMC, downtime_equipos: [raw.downReso, raw.downTomo, raw.downHemo, raw.downRayos], budget_pct: [(raw.presTotalEjer/raw.presTotalAsig)*100, (raw.presMttoEjer/raw.presMttoAsig)*100] },
-                            retos: []
-                        };
-                    }
-                });
-                setDataSet(tempDataSet);
-                setHistorico({ meses: histMeses, mp: histMP, gastoTotal: histGasto });
-                let keys = Object.keys(tempDataSet);
-                if (keys.length > 0) setCurrentMonth(keys[keys.length - 1]);
-            };
-
-            const currentData = useMemo(() => {
-                if (Object.keys(dataSet).length === 0) return null;
-                if (!currentMonth || !dataSet[currentMonth]) return null;
-                return dataSet[currentMonth];
-            }, [dataSet, currentMonth]);
-
-            const monthlyCompliance = useMemo(() => {
-                if (!equipos || equipos.length === 0) return [];
-                return mesesAbreviados.map((nombreMes, monthIndex) => {
-                    let programados = 0, cumplidos = 0;
-                    equipos.forEach(equipo => {
-                        if (equipo.motivoFueraServicio === 'BAJA DEFINITIVA') return;
-                        const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, dashYear);
-                        if (mesesProgramados.has(monthIndex)) {
-                            if (equipo.estatus !== 'Fuera de Servicio') {
-                                programados++;
-                                if (verificarCumplimiento(equipo.historialEjecuciones, monthIndex, dashYear)) cumplidos++;
-                            }
-                        }
-                    });
-                    const pct = programados === 0 ? 100 : Math.round((cumplidos / programados) * 100);
-                    return { mes: nombreMes, programados, cumplidos, pct };
-                });
-            }, [equipos, dashYear]);
-
-            return (
-                <div className="bg-dark text-slate-200 p-4 md:p-6 rounded-2xl shadow-xl w-full mx-auto">
-                    <header className="flex flex-col md:flex-row justify-between items-center bg-panel p-6 rounded-xl border border-slate-800 mb-6">
-                        <div>
-                            <h1 className="text-2xl font-bold text-white">Indicadores de Ingeniería Biomédica</h1>
-                            <p className="text-slate-400 text-sm mt-1">Hospital San Ángel Inn</p>
-                        </div>
-                    </header>
-                    <div className="bg-panel rounded-xl border border-slate-800 p-6">
-                        <h3 className="text-lg font-bold text-white mb-4"><i className="fas fa-clipboard-check text-primary mr-2"></i> Cumplimiento Mensual Real (Inventario)</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                            {monthlyCompliance.map(m => (
-                                <div key={m.mes} className="bg-dark border border-slate-700 rounded-lg p-3 text-center">
-                                    <p className="font-bold text-slate-300">{m.mes}</p>
-                                    <p className="text-2xl font-black text-success my-2">{m.pct}%</p>
-                                    <p className="text-xs text-slate-500">Prog: {m.programados} | Cumpl: {m.cumplidos}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // APLICACIÓN PRINCIPAL CMMS
+<!-- ... existing code ... -->
+        // ============================================================================
+        // LÓGICA PRINCIPAL CMMS (INVENTARIO Y CALENDARIOS)
+        // ============================================================================
         const CMMSHospitalario = () => {
-            const [activeTab, setActiveTab] = useState('calendarios');
-            const [inventarioTab, setInventarioTab] = useState('Propio');
-            const [equipos, setEquipos] = useState(datosPruebaSeguros); // Arranca seguro con datos de prueba
-            const [historialGlobal, setHistorialGlobal] = useState([]);
-            const [isSyncing, setIsSyncing] = useState(false);
-            const [syncError, setSyncError] = useState(null);
+          const [activeTab, setActiveTab] = useState('dashboard');
+<!-- ... existing code ... -->
+          const handleAddEquipo = async (e) => {
+            e.preventDefault();
+            const id = `${nuevoEquipo.origen}-${Date.now()}`;
+            const numero = equipos.length > 0 ? Math.max(...equipos.map(eq => Number(eq.numero) || 0)) + 1 : 1;
+            const equipoGuardar = { ...nuevoEquipo, id, numero };
             
-            const [searchTerm, setSearchTerm] = useState('');
-            const [filterEstatus, setFilterEstatus] = useState('Todos');
-            const [filterUbicacionCal, setFilterUbicacionCal] = useState('Todas');
-            const [filterMesCal, setFilterMesCal] = useState('Todos');
-            const [searchControlCal, setSearchControlCal] = useState('');
-            const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
-
-            const [selectedEquipo, setSelectedEquipo] = useState(null);
-            const [isEditing, setIsEditing] = useState(false);
-            const [equipoEditado, setEquipoEditado] = useState(null);
-            const [showAddEquipo, setShowAddEquipo] = useState(false);
-
-            const estadoInicialEquipo = { origen: inventarioTab, numeroInventario: '', estatus: 'En Servicio', nombre: '', marca: '', modelo: '', numeroSerie: '', ubicacion: '', frecuenciaMantenimiento: 'M', ultimoMantenimiento: '2026-01' };
-            const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
-
-            const handleSyncSheets = async () => {
+            if (GOOGLE_SHEETS_WEBAPP_URL) {
+              try {
                 setIsSyncing(true);
-                setSyncError(null);
-                try {
-                    const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`);
-                    if (!response.ok) throw new Error("Error de conexión HTTP: " + response.status);
-                    const data = await response.json();
-                    if (data.error) throw new Error(data.error);
+                await fetch(GOOGLE_SHEETS_WEBAPP_URL, { method: 'POST', body: JSON.stringify({ action: 'add', data: equipoGuardar, sheetName: equipoGuardar.origen }) });
+              } catch (error) {} finally { setIsSyncing(false); }
+            }
+            setEquipos([...equipos, equipoGuardar]);
+            setShowAddEquipo(false);
+            setNuevoEquipo(estadoInicialEquipo);
+          };
 
-                    const procesarHoja = (arr, origen) => (Array.isArray(arr) ? arr : []).filter(e => e && (e.numeroInventario || e.nombre)).map((e, idx) => ({...e, origen, id: `${origen}-${e.id || idx}`}));
-                    
-                    const totalEquipos = [
-                        ...procesarHoja(data.propio, 'Propio'),
-                        ...procesarHoja(data.comodato, 'Comodato'),
-                        ...procesarHoja(data.renta, 'Renta')
-                    ];
+          const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
+              const strY = year.toString();
+              const strM = (monthIndex + 1).toString().padStart(2, '0');
+              const targetStr = `${strY}-${strM}`;
 
-                    if (totalEquipos.length > 0) {
-                        setEquipos(totalEquipos);
-                    }
-                    if (Array.isArray(data.historial)) {
-                        setHistorialGlobal(data.historial);
-                    }
-                } catch (err) {
-                    console.error("Fallo de sincronización:", err);
-                    setSyncError(err.message);
-                } finally {
-                    setIsSyncing(false);
-                }
-            };
+              let historialArr = limpiarHistorial(equipo.historialEjecuciones);
+              if (historialArr.includes(targetStr)) { historialArr = historialArr.filter(h => h !== targetStr); } 
+              else { historialArr.push(targetStr); }
+              historialArr = [...new Set(historialArr)];
 
-            useEffect(() => { handleSyncSheets(); }, []);
+              const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
+              setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
+              directSaveToSheets(updatedEquipo);
+          };
 
-            const equiposFiltrados = useMemo(() => {
-                return equipos.filter(e => {
-                    const matchHoja = e.origen === inventarioTab;
-                    const matchEstatus = filterEstatus === 'Todos' || e.estatus === filterEstatus;
-                    if (!searchTerm) return matchHoja && matchEstatus;
-                    const s = searchTerm.toLowerCase();
-                    return matchHoja && matchEstatus && (String(e.nombre || '').toLowerCase().includes(s) || String(e.numeroInventario || '').toLowerCase().includes(s));
-                });
-            }, [equipos, inventarioTab, searchTerm, filterEstatus]);
+          const getEstatusColor = (estatus) => {
+            const status = estatus ? estatus.toLowerCase() : '';
+            if (status.includes('servicio') && !status.includes('fuera')) return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+            if (status.includes('fuera de servicio')) return 'bg-red-100 text-red-800 border-red-300';
+            return 'bg-gray-100 text-gray-800 border-gray-300'; 
+          };
 
-            const ubicacionesUnicas = useMemo(() => {
-                const locs = equipos.filter(e => e.origen === inventarioTab).map(e => e.ubicacion).filter(Boolean);
-                return ['Todas', ...new Set(locs)].sort();
-            }, [equipos, inventarioTab]);
+          const renderCalendarios = () => (
+<!-- ... existing code ... -->
+                    <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
+                      <button type="button" onClick={() => setIsEditing(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
+                      <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
+                        {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>}
+                        Guardar Cambios
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              );
+            }
 
-            const equiposCalendario = useMemo(() => {
-                return equipos.filter(e => {
-                    if (e.origen !== inventarioTab) return false;
-                    if (!e.frecuenciaMantenimiento) return false;
-                    if (e.motivoFueraServicio === 'BAJA DEFINITIVA') return false;
-                    if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
-                    if (searchControlCal && !String(e.numeroInventario || '').toLowerCase().includes(searchControlCal.toLowerCase())) return false;
-                    if (filterMesCal !== 'Todos') {
-                        const monthIdx = parseInt(filterMesCal, 10);
-                        const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
-                        if (!programados.has(monthIdx)) return false;
-                    }
-                    return true;
-                });
-            }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, searchControlCal, calendarYear]);
+            if (selectedEquipo) {
+              const freqText = frecuenciasOptions.find(f => f.id === selectedEquipo.frecuenciaMantenimiento)?.label || 'No asignada';
+              
+              // LÓGICA DE REDIRECCIÓN A JOTFORM
+              const handleJotformRedirect = () => {
+                  const formUrl = "https://form.jotform.com/253464903173862";
+                  
+                  const params = new URLSearchParams({
+                      equipoName: selectedEquipo.nombre || '',
+                      equipoMarca: selectedEquipo.marca || '',
+                      equipoModelo: selectedEquipo.modelo || '',
+                      equipoSerie: selectedEquipo.numeroSerie || '',
+                      equipoInventario: selectedEquipo.numeroInventario || '',
+                      equipoUbicacion: selectedEquipo.ubicacion || ''
+                  });
+                  
+                  window.open(`${formUrl}?${params.toString()}`, '_blank');
+              };
 
-            const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
-                const targetStr = `${year}-${(monthIndex + 1).toString().padStart(2, '0')}`;
-                let historialArr = limpiarHistorial(equipo.historialEjecuciones);
-                if (historialArr.includes(targetStr)) { historialArr = historialArr.filter(h => h !== targetStr); } 
-                else { historialArr.push(targetStr); }
-                const updated = { ...equipo, historialEjecuciones: [...new Set(historialArr)].join(',') };
-                setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
-            };
+              return (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
+                  <div className="p-4 border-b border-gray-100 flex items-center gap-4 bg-gray-50">
+                    <button onClick={() => setSelectedEquipo(null)} className="text-gray-500 hover:text-blue-600 transition flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 shadow-sm">
+                      <i className="fas fa-arrow-left"></i> Volver al Inventario
+                    </button>
+                    <div className="ml-auto flex gap-2">
+                      <button onClick={handleJotformRedirect} className="flex items-center gap-2 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-lg hover:bg-amber-100 transition shadow-sm font-medium text-sm">
+                        <i className="fas fa-wrench"></i> Generar Orden (OS)
+                      </button>
+                      <button onClick={() => { setEquipoEditado({...selectedEquipo}); setIsEditing(true); }} className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition shadow-sm font-medium text-sm">
+                        <i className="fas fa-edit"></i> Editar Información
+                      </button>
+                    </div>
+                  </div>
 
-            const getEstatusColor = (estatus) => {
-                return estatus === 'Fuera de Servicio' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300';
-            };
+                  <div className="p-8">
+                    <div className="flex flex-col lg:flex-row justify-between items-start gap-4 mb-8 border-b border-gray-100 pb-6">
+                      <div className="flex-1">
+                        <h2 className="text-3xl font-bold mb-2">{selectedEquipo.nombre || 'Equipo sin nombre'}</h2>
+                        
+                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200 shadow-sm">
+                                <i className="fas fa-wrench mr-2"></i> {freqText}
+                            </span>
+                            {selectedEquipo.ultimoMantenimiento && (
+                                <span className="text-gray-600 font-medium flex items-center bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                                    <i className="far fa-calendar-check mr-2 text-gray-400"></i> Último Base: {selectedEquipo.ultimoMantenimiento}
+                                </span>
+                            )}
+                            {selectedEquipo.proximoMantenimiento && (
+                                <span className="text-emerald-700 font-bold flex items-center bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                                    <i className="fas fa-arrow-right mx-2 text-emerald-400"></i> Próximo Est.: {selectedEquipo.proximoMantenimiento}
+                                </span>
+                            )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-end gap-3 min-w-[250px]">
+                        <span className={`px-4 py-2 rounded-lg border font-bold text-lg text-center shadow-sm w-full ${getEstatusColor(selectedEquipo.estatus)}`}>
+                          {selectedEquipo.numeroInventario || 'Sin No. Inv'}
+                        </span>
+                        
+                        <div className="w-full bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest"><i className="fas fa-exchange-alt mr-1"></i> Estatus:</label>
+                            <select 
+                              value={selectedEquipo.estatus} 
+                              onChange={(e) => {
+                                  const updated = { ...selectedEquipo, estatus: e.target.value };
+                                  if (e.target.value === 'En Servicio') updated.motivoFueraServicio = '';
+                                  else updated.motivoFueraServicio = motivosOptions[0];
+                                  setSelectedEquipo(updated);
+                                  setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+                                  directSaveToSheets(updated);
+                              }}
+                              className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${
+                                selectedEquipo.estatus === 'En Servicio' ? 'text-emerald-700' : 'text-red-700'
+                              }`}
+                            >
+                              <option value="En Servicio" className="text-emerald-700 font-bold">En Servicio</option>
+                              <option value="Fuera de Servicio" className="text-red-700 font-bold">Fuera de Servicio</option>
+                            </select>
+                          </div>
+                          
+                          {selectedEquipo.estatus === 'Fuera de Servicio' && (
+                            <div className="flex flex-col gap-1 mt-1 border-t border-gray-100 pt-2 animate-in fade-in">
+                              <label className="text-[10px] font-bold text-red-500 uppercase">Motivo:</label>
+                              <select 
+                                value={selectedEquipo.motivoFueraServicio || ''} 
+                                onChange={(e) => {
+                                    const updated = { ...selectedEquipo, motivoFueraServicio: e.target.value };
+                                    setSelectedEquipo(updated);
+                                    setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+                                    directSaveToSheets(updated);
+                                }}
+                                className="text-xs font-medium border border-red-200 rounded p-1.5 text-red-700 bg-red-50 w-full outline-none"
+                              >
+                                <option value="" disabled>Seleccione un motivo...</option>
+                                {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8">
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Categoría</p>
+                        <p className="font-medium">{selectedEquipo.tipoTecnologia || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Marca</p>
+                        <p className="font-medium">{selectedEquipo.marca || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Modelo / Versión</p>
+                        <p className="font-medium">{selectedEquipo.modelo || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Número de Serie</p>
+                        <p className="font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Ubicación Física</p>
+                        <p className="font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fabricante</p>
+                        <p className="font-medium">{selectedEquipo.fabricante || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p>
+                        <p className="font-medium">
+                          {selectedEquipo.polizaMantenimiento === 'Sí' ? 
+                            <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : 
+                            <span className="text-gray-500">Sin Póliza</span>}
+                        </p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Proveedor Mantenimiento</p>
+                        <p className="font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p>
+                        <p className="font-medium">{selectedEquipo.nivelRiesgo || '-'}</p>
+                      </div>
+                      <div className="border-b border-gray-100 pb-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta al Inventario</p>
+                        <p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p>
+                      </div>
+                      <div className="lg:col-span-3 mt-4">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p>
+                        <p className="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">
+                            {selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
 
             return (
-                <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
-                    <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10 md:min-h-screen print-hidden">
-                        <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-                            <div className="bg-blue-500 p-2 rounded-lg text-white font-bold"><i className="fas fa-stethoscope"></i></div>
-                            <div>
-                                <h1 className="text-xl font-bold">MediCMMS</h1>
-                                <p className="text-xs text-slate-400">Panel Biomédico</p>
-                            </div>
-                        </div>
-                        <nav className="flex-1 p-4 space-y-2">
-                            <button onClick={() => { setActiveTab('dashboard'); setSelectedEquipo(null); }} className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium ${activeTab === 'dashboard' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><i className="fas fa-columns mr-2"></i> Dashboard</button>
-                            <button onClick={() => { setActiveTab('equipos'); setSelectedEquipo(null); }} className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium ${activeTab === 'equipos' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><i className="fas fa-boxes mr-2"></i> Inventario</button>
-                            <button onClick={() => { setActiveTab('calendarios'); setSelectedEquipo(null); }} className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium ${activeTab === 'calendarios' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><i className="far fa-calendar-alt mr-2"></i> Calendario MP</button>
-                        </nav>
-                    </aside>
-
-                    <main className="flex-1 p-6 overflow-y-auto relative">
-                        {syncError && (
-                            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm">
-                                <div className="flex items-center">
-                                    <div className="text-amber-500 mr-3"><i className="fas fa-info-circle text-xl"></i></div>
-                                    <div>
-                                        <p className="text-sm font-bold text-amber-800">Aviso de Google Sheets: Cargando con datos locales de respaldo.</p>
-                                        <p className="text-xs text-amber-700 mt-0.5">Motivo: {syncError}. (Verifica que tu Google Apps Script esté publicado correctamente o usa los datos de prueba).</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="max-w-7xl mx-auto">
-                            {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} />}
-
-                            {activeTab === 'equipos' && !selectedEquipo && (
-                                <div className="space-y-6">
-                                    <div className="flex justify-between items-center">
-                                        <h2 className="text-2xl font-bold">Inventario de Equipos ({equiposFiltrados.length})</h2>
-                                        <button onClick={handleSyncSheets} disabled={isSyncing} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700"><i className={`fas fa-sync-alt ${isSyncing ? 'fa-spin' : ''} mr-2`}></i> {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}</button>
-                                    </div>
-                                    <div className="flex border-b bg-white rounded-t-xl overflow-hidden shadow-sm">
-                                        {['Propio', 'Comodato', 'Renta'].map(t => (
-                                            <button key={t} onClick={() => setInventarioTab(t)} className={`flex-1 py-3 px-4 text-sm font-bold border-b-2 ${inventarioTab === t ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500'}`}>Hoja: {t}</button>
-                                        ))}
-                                    </div>
-                                    <div className="bg-white rounded-b-xl shadow-sm overflow-hidden border border-gray-100 p-4">
-                                        <div className="flex gap-4 mb-4">
-                                            <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar equipo..." className="flex-1 p-2 border rounded text-sm" />
-                                        </div>
-                                        <table className="w-full text-left text-sm">
-                                            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-                                                <tr><th className="p-3">Control</th><th className="p-3">Nombre</th><th className="p-3">Marca/Modelo</th><th className="p-3">Ubicación</th><th className="p-3">Estatus</th></tr>
-                                            </thead>
-                                            <tbody>
-                                                {equiposFiltrados.map(eq => (
-                                                    <tr key={eq.id} onClick={() => setSelectedEquipo(eq)} className="border-b hover:bg-blue-50/50 cursor-pointer">
-                                                        <td className="p-3 font-bold text-blue-700">{eq.numeroInventario}</td>
-                                                        <td className="p-3 font-medium">{eq.nombre}</td>
-                                                        <td className="p-3 text-gray-600">{eq.marca} {eq.modelo}</td>
-                                                        <td className="p-3 text-gray-600">{eq.ubicacion}</td>
-                                                        <td className="p-3"><span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${getEstatusColor(eq.estatus)}`}>{eq.estatus}</span></td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === 'equipos' && selectedEquipo && (
-                                <div className="bg-white rounded-xl shadow-sm border p-6 space-y-6">
-                                    <div className="flex justify-between items-center border-b pb-4">
-                                        <button onClick={() => setSelectedEquipo(null)} className="text-blue-600 font-bold text-sm"><i className="fas fa-arrow-left mr-2"></i> Volver al Inventario</button>
-                                        <a href={`https://form.jotform.com/253464903173862?equipoInventario=${encodeURIComponent(selectedEquipo.numeroInventario)}&equipoName=${encodeURIComponent(selectedEquipo.nombre)}`} target="_blank" rel="noreferrer" className="bg-amber-50 text-amber-800 border border-amber-200 px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-amber-100"><i className="fas fa-wrench mr-2"></i> Generar Orden (OS Jotform)</a>
-                                    </div>
-                                    <div>
-                                        <h2 className="text-3xl font-bold">{selectedEquipo.nombre}</h2>
-                                        <p className="text-gray-500 text-sm mt-1">Control: <strong className="text-blue-700">{selectedEquipo.numeroInventario}</strong> | Ubicación: {selectedEquipo.ubicacion}</p>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg border">
-                                        <div><p className="text-xs text-gray-400 font-bold uppercase">Marca</p><p className="font-medium">{selectedEquipo.marca || '-'}</p></div>
-                                        <div><p className="text-xs text-gray-400 font-bold uppercase">Modelo</p><p className="font-medium">{selectedEquipo.modelo || '-'}</p></div>
-                                        <div><p className="text-xs text-gray-400 font-bold uppercase">Serie</p><p className="font-mono">{selectedEquipo.numeroSerie || '-'}</p></div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === 'calendarios' && (
-                                <div className="space-y-6 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                                    <div className="flex justify-between items-center flex-wrap gap-4">
-                                        <h2 className="text-2xl font-bold"><i className="far fa-calendar-alt text-blue-600 mr-2"></i> Calendario de Mantenimiento Preventivo</h2>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => window.print()} className="bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium"><i className="fas fa-print mr-2"></i> Imprimir</button>
-                                            <button onClick={handleSyncSheets} disabled={isSyncing} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium"><i className={`fas fa-sync-alt ${isSyncing ? 'fa-spin' : ''} mr-2`}></i> Sincronizar</button>
-                                        </div>
-                                    </div>
-                                    <div className="flex border-b bg-gray-50 rounded-lg overflow-hidden p-1 gap-1">
-                                        {['Propio', 'Comodato', 'Renta'].map(t => (
-                                            <button key={t} onClick={() => setInventarioTab(t)} className={`flex-1 py-2 px-3 text-sm font-bold rounded ${inventarioTab === t ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>{t}</button>
-                                        ))}
-                                    </div>
-                                    <div className="flex flex-wrap gap-4 items-center">
-                                        <input type="text" value={searchControlCal} onChange={e => setSearchControlCal(e.target.value)} placeholder="Buscar por No. Control..." className="p-2 border rounded text-sm w-48" />
-                                        <select value={filterUbicacionCal} onChange={e => setFilterUbicacionCal(e.target.value)} className="p-2 border rounded text-sm"><option value="Todas">Todas las áreas</option>{ubicacionesUnicas.map(u => <option key={u} value={u}>{u}</option>)}</select>
-                                        <input type="number" value={calendarYear} onChange={e => setCalendarYear(parseInt(e.target.value))} className="p-2 border rounded text-sm w-24 text-center font-bold" />
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left border-collapse tabla-cal text-xs whitespace-nowrap">
-                                            <thead>
-                                                <tr>
-                                                    <th className="p-2 w-24">Control</th><th className="p-2">Equipo</th><th className="p-2">Ubicación</th>
-                                                    {mesesAbreviados.map(mes => <th key={mes} className="p-1 w-8 uppercase text-center" style={{writingMode: 'vertical-rl', transform: 'rotate(180deg)', paddingBottom: '10px'}}>{mes}</th>)}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {equiposCalendario.map(equipo => {
-                                                    const programados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, calendarYear);
-                                                    const ejecutadosArr = limpiarHistorial(equipo.historialEjecuciones);
-                                                    const isFuera = equipo.estatus === 'Fuera de Servicio';
-                                                    return (
-                                                        <tr key={equipo.id} className="hover:bg-blue-50/30">
-                                                            <td className="p-2 font-bold text-blue-900 border">{equipo.numeroInventario}</td>
-                                                            <td className="p-2 border font-medium">{equipo.nombre}</td>
-                                                            <td className="p-2 border text-gray-600">{equipo.ubicacion}</td>
-                                                            {[0,1,2,3,4,5,6,7,8,9,10,11].map(m => {
-                                                                const isEjec = ejecutadosArr.includes(`${calendarYear}-${(m+1).toString().padStart(2,'0')}`);
-                                                                const isProg = programados.has(m);
-                                                                let cClass = "p-1 border celda-interactiva ";
-                                                                if (isEjec) cClass += "celda-ejec";
-                                                                else if (isProg) cClass += isFuera ? "celda-fuera-servicio" : "celda-prog";
-                                                                else cClass += "bg-white";
-                                                                return <td key={m} onClick={() => toggleMantenimientoEjecutado(equipo, m, calendarYear)} className={cClass}></td>;
-                                                            })}
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </main>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<CMMSHospitalario />);
-    </script>
-</body>
-</html>
+              <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
+<!-- ... existing code ... -->
