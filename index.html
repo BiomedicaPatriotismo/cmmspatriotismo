@@ -137,6 +137,149 @@
         const estaEnServicio = (e) => !estaFueraServicio(e) && normTexto(e && e.estatus).indexOf('SERVICIO') > -1;
         const esBajaDefinitiva = (e) => normTexto(e && e.motivoFueraServicio) === 'BAJA DEFINITIVA';
 
+        // ============================================================================
+        // GENERADOR DE ETIQUETAS DE IDENTIFICACIÓN DE EQUIPO
+        // ----------------------------------------------------------------------------
+        // El QR es fijo: apunta a la aplicación CMMS (base de datos de equipos).
+        // Va incrustado en base64 para que la etiqueta se genere e imprima aunque
+        // la red del hospital bloquee CDNs externas o no haya internet.
+        // ============================================================================
+        const QR_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAFAAQAAAADl65gHAAADU0lEQVR42u1bS66jQAwsnkZ67Nw3IPc/VecGxY5ZeRa2u+mE33ZokFAgtBKlVHaVCzIorm0/eBb+5wuhtFdRVTsWCkXV9nL1wfF7Y4OjIShKiCoBUYqdElKudo8jsQAEErBwwQgQqcGRxsHKS9orDVJguooje+JjA+N6oShF38OQAOE8DC/JT3+sW4o6Znljc6Hk+YV5yvJ+eZvM8+vgq9N2q7gjjulwUQLwB4AoMBt0aeIMCDHLO2GAlKt985F7Cxa/+gPMwzAMLwBzgrwT7Ch65l+/+tT1DhNDZ2Kja/NqW7/RO47jMYxQTgyRIUQ5hYt0zQYwGY7cd0896nVb25WIdMsjhZzEZO5cTvl4X53hsoYrmDimFVMXn2eEEzGxuMeocLPiqrnOMzzouUb0m/Ixnc2FdZSxPYYZbY467o+pIkkAC52CLDRlzIVe2jYUxixD+HD4zNdXcgrlZCCKaobjBinMlKrXvMLyu+p1aoRgTG3DRK1l9zqIGrdG6cHFw8dtdeU6NyvxzsrzmL64I/qqa+4bqXviyI3fzZaPSqFHZCyJjwSgnkY+fDyZaQxFd9xSICWkzDRX/OOdcaxmkVtUZO2PnjXGGFPp6RR99NrxSrvzhxLCKSpZdKu6q86wRxx5OsN5f0SkO7Jqloz+aJg+fNx0e6nho4SD5KTV6njJZ9nKe7j3mXecZxiJT2rCcC4VCC0ao2WmXilPqHbXfLzQzaCWUAjFuCi5CDVreibNPMOjmebW/nG/IjUI6ZNglWgW//jo9YW8x/W6mQN1lfyI8rf0xxOGj/fEMV347SWyrbMLo0M6S7Xv/mgufLHELK2EJ5hTdcYKOn9GFKLZJbzV6x39Z4c5BbAYlkVPpDbJ8qgP8OHDO+RjGm0/UBz34cXwaA6RwRTzjRKyfM3Xaftjl3vzkQdzTX3ejChxON2Ie6d89LoFkfU0RZrrZZyF+NUM1Gd64pYNJK/4mACM0W63umS3zz/WiKfeK2S9NeOK88zXX6QZvZelFkchIBlN/pjxy22dSZ+nY284fuYUq8jR7yi4B48bYDjtj7y1fwRS9DLuaqyuHqbQHBJd/Xfc1j5NkG5d1+dJRdFrhlqHYpuljKd/Tr+aXdZ1bMPzn4puFv4DqpI0U2+dvBcAAAAASUVORK5CYII=';
+
+        // ============================================================================
+        // ETIQUETA ZEBRA 50 x 30 mm @ 203 dpi (8 dots/mm)
+        // ----------------------------------------------------------------------------
+        // Tamaño nativo: 400 x 240 dots. Se renderiza a 4x (1600x960) para que
+        // el escalado del driver quede nítido y sin dientes de sierra.
+        // El QR es versión 5 (37x37 módulos); a 27 mm cada módulo mide ~5.8 dots,
+        // muy por encima del mínimo de 4 dots recomendado para lectura fiable.
+        // ============================================================================
+        const ETQ_ANCHO_MM = 50;
+        const ETQ_ALTO_MM  = 30;
+        const ETQ_DPMM     = 8;    // 203 dpi
+        const ETQ_ESCALA   = 4;    // supermuestreo
+
+        const ETQ_W = ETQ_ANCHO_MM * ETQ_DPMM * ETQ_ESCALA;  // 1600
+        const ETQ_H = ETQ_ALTO_MM  * ETQ_DPMM * ETQ_ESCALA;  // 960
+        const DPMM  = ETQ_DPMM * ETQ_ESCALA;                 // dots por mm en lienzo
+
+        // Reduce el tamaño hasta que el texto quepa; nunca baja del mínimo legible
+        const ajustarTexto = (ctx, texto, maxAncho, tamInicial, tamMinimo) => {
+            let t = tamInicial;
+            while (t > tamMinimo) {
+                ctx.font = `bold ${t}px Arial, Helvetica, sans-serif`;
+                if (ctx.measureText(texto).width <= maxAncho) return t;
+                t -= 1;
+            }
+            return tamMinimo;
+        };
+
+        // Parte el texto en líneas que quepan en maxAncho
+        const partirTexto = (ctx, texto, maxAncho) => {
+            const palabras = String(texto).split(/\s+/).filter(Boolean);
+            const lineas = [];
+            let actual = '';
+            palabras.forEach(p => {
+                const prueba = actual ? actual + ' ' + p : p;
+                if (ctx.measureText(prueba).width <= maxAncho) actual = prueba;
+                else { if (actual) lineas.push(actual); actual = p; }
+            });
+            if (actual) lineas.push(actual);
+            return lineas;
+        };
+
+        /**
+         * Dibuja la etiqueta 50x30 mm del equipo y devuelve el dataURL PNG.
+         */
+        const generarEtiqueta = (equipo) => {
+            return new Promise((resolve, reject) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = ETQ_W; canvas.height = ETQ_H;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, ETQ_W, ETQ_H);
+
+                const img = new Image();
+                img.onload = () => {
+                    const margen = Math.round(1.2 * DPMM);
+
+                    // --- QR cuadrado a la izquierda ---
+                    const qrLado = ETQ_H - 2 * margen;
+                    ctx.imageSmoothingEnabled = false;   // bordes limpios
+                    ctx.drawImage(img, margen, margen, qrLado, qrLado);
+                    ctx.imageSmoothingEnabled = true;
+
+                    // --- Zona de texto a la derecha ---
+                    const xIni = margen + qrLado + Math.round(1.2 * DPMM);
+                    const aw = ETQ_W - xIni - margen;
+                    const cx = xIni + aw / 2;
+
+                    // Tamaños expresados en mm reales de altura de letra
+                    const T_INV = Math.round(2.6 * DPMM);
+                    const T_NOM = Math.round(1.9 * DPMM);
+                    const T_CPO = Math.round(1.6 * DPMM);
+                    const T_MIN = Math.round(1.1 * DPMM);   // límite legible térmico
+
+                    ctx.fillStyle = '#000000';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+
+                    const lineas = [];
+
+                    // Nombre: máximo 2 líneas
+                    ctx.font = `bold ${T_NOM}px Arial, Helvetica, sans-serif`;
+                    partirTexto(ctx, equipo.nombre || '-', aw)
+                        .slice(0, 2)
+                        .forEach(l => lineas.push({ txt: l, tam: T_NOM }));
+
+                    ctx.font = `bold ${T_CPO}px Arial, Helvetica, sans-serif`;
+                    if (equipo.marca) {
+                        partirTexto(ctx, equipo.marca, aw).slice(0, 1)
+                            .forEach(l => lineas.push({ txt: l, tam: T_CPO }));
+                    }
+                    if (equipo.modelo) {
+                        partirTexto(ctx, 'Mod: ' + equipo.modelo, aw).slice(0, 1)
+                            .forEach(l => lineas.push({ txt: l, tam: T_CPO }));
+                    }
+                    if (equipo.numeroSerie) {
+                        lineas.push({ txt: 'N/S: ' + equipo.numeroSerie, tam: T_CPO });
+                    }
+                    if (equipo.ubicacion) {
+                        partirTexto(ctx, equipo.ubicacion, aw).slice(0, 1)
+                            .forEach(l => lineas.push({ txt: l, tam: T_CPO }));
+                    }
+
+                    const inv = String(equipo.numeroInventario || '');
+
+                    // Escala vertical si el bloque no cabe
+                    let total = lineas.reduce((a, l) => a + l.tam * 1.28, 0);
+                    if (inv) total += T_INV * 1.35;
+                    const disp = ETQ_H - 2 * margen;
+                    const esc = total > disp ? disp / total : 1;
+
+                    let y = (ETQ_H - total * esc) / 2;
+                    lineas.forEach(l => {
+                        const tam = ajustarTexto(ctx, l.txt, aw, Math.round(l.tam * esc), T_MIN);
+                        ctx.font = `bold ${tam}px Arial, Helvetica, sans-serif`;
+                        ctx.fillText(l.txt, cx, y + l.tam * esc * 0.64);
+                        y += l.tam * esc * 1.28;
+                    });
+
+                    // Número de inventario destacado al pie
+                    if (inv) {
+                        const tam = ajustarTexto(ctx, inv, aw, Math.round(T_INV * esc), T_MIN);
+                        ctx.font = `bold ${tam}px Arial, Helvetica, sans-serif`;
+                        ctx.fillText(inv, cx, y + T_INV * esc * 0.68);
+                    }
+
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                img.onerror = () => reject(new Error('No se pudo cargar el código QR.'));
+                img.src = QR_BASE64;
+            });
+        };
+
         const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
         // ============================================================================
@@ -958,6 +1101,112 @@
             return 'bg-gray-100 text-gray-800 border-gray-300'; 
           };
 
+          // ============================================================================
+          // ETIQUETA DE IDENTIFICACIÓN DEL EQUIPO
+          // Vista previa + descarga PNG + impresión directa
+          // ============================================================================
+          const EtiquetaEquipo = ({ equipo }) => {
+            const [imgUrl, setImgUrl] = useState(null);
+            const [errorEtiqueta, setErrorEtiqueta] = useState(null);
+
+            useEffect(() => {
+              let vigente = true;
+              setImgUrl(null);
+              setErrorEtiqueta(null);
+              generarEtiqueta(equipo)
+                .then(url => { if (vigente) setImgUrl(url); })
+                .catch(err => { if (vigente) setErrorEtiqueta(err.message); });
+              return () => { vigente = false; };
+            }, [equipo.id, equipo.nombre, equipo.marca, equipo.modelo,
+                equipo.numeroSerie, equipo.ubicacion, equipo.numeroInventario]);
+
+            const nombreArchivo = () => {
+              const inv = String(equipo.numeroInventario || 'SIN-INV')
+                .replace(/[^A-Za-z0-9_-]/g, '');
+              return `Etiqueta_${inv}.png`;
+            };
+
+            const descargar = () => {
+              if (!imgUrl) return;
+              const a = document.createElement('a');
+              a.href = imgUrl;
+              a.download = nombreArchivo();
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            };
+
+            const imprimir = () => {
+              if (!imgUrl) return;
+              const v = window.open('', '_blank', 'width=900,height=600');
+              if (!v) {
+                setErrorEtiqueta('El navegador bloqueó la ventana emergente. Permite las ventanas emergentes para imprimir.');
+                return;
+              }
+              // Tamaño físico exacto: la Zebra debe recibir 50x30 mm, sin
+              // reescalado del navegador. margin:0 + size fijo evita que el
+              // driver aplique "ajustar a página" y deforme la etiqueta.
+              v.document.write(
+                '<html><head><title>' + nombreArchivo() + '</title>' +
+                '<style>' +
+                '@page{size:' + ETQ_ANCHO_MM + 'mm ' + ETQ_ALTO_MM + 'mm;margin:0}' +
+                'html,body{margin:0;padding:0}' +
+                'img{width:' + ETQ_ANCHO_MM + 'mm;height:' + ETQ_ALTO_MM + 'mm;display:block;' +
+                'image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges}' +
+                '</style></head><body>' +
+                '<img src="' + imgUrl + '" onload="window.focus();window.print();window.close();">' +
+                '</body></html>'
+              );
+              v.document.close();
+            };
+
+            return (
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                    <i className="fas fa-tag mr-2"></i>Etiqueta de Identificación
+                    <span className="ml-2 text-[10px] normal-case font-medium text-gray-400">
+                      {ETQ_ANCHO_MM} × {ETQ_ALTO_MM} mm · Zebra 203 dpi
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap gap-2 print-hidden">
+                    <button onClick={descargar} disabled={!imgUrl}
+                      className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                      <i className="fas fa-download"></i> Descargar PNG
+                    </button>
+                    <button onClick={imprimir} disabled={!imgUrl}
+                      className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition shadow-sm font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                      <i className="fas fa-print"></i> Imprimir
+                    </button>
+                  </div>
+                </div>
+
+                {errorEtiqueta && (
+                  <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded-lg text-sm text-red-700">
+                    {errorEtiqueta}
+                  </div>
+                )}
+
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex justify-center shadow-inner">
+                  {imgUrl ? (
+                    <img src={imgUrl} alt={'Etiqueta ' + (equipo.numeroInventario || '')}
+                      className="h-auto rounded shadow-md border border-gray-300 bg-white"
+                      style={{ width: '340px', maxWidth: '100%' }} />
+                  ) : !errorEtiqueta ? (
+                    <div className="py-12 text-gray-400 text-sm flex items-center gap-2">
+                      <i className="fas fa-circle-notch fa-spin"></i> Generando etiqueta...
+                    </div>
+                  ) : null}
+                </div>
+
+                <p className="text-[11px] text-gray-400 mt-2 text-center">
+                  El código QR dirige a la base de datos de equipos del CMMS.
+                  Al imprimir, configura el driver Zebra en <strong>100% de escala</strong> (sin «ajustar a página»).
+                </p>
+              </div>
+            );
+          };
+
           // Banner de diagnóstico: los fallos ya no son silenciosos
           const BannerEstado = () => {
             if (syncError) {
@@ -1293,6 +1542,11 @@
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p><p className="font-medium">{selectedEquipo.nivelRiesgo || '-'}</p></div>
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta</p><p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p></div>
                       <div className="lg:col-span-3 mt-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p><p className="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">{selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}</p></div>
+
+                      {/* ETIQUETA DE IDENTIFICACIÓN */}
+                      <div className="lg:col-span-3 mt-6 pt-6 border-t-2 border-dashed border-gray-200">
+                        <EtiquetaEquipo equipo={selectedEquipo} />
+                      </div>
                     </div>
                   </div>
                 </div>
