@@ -744,15 +744,36 @@
             try {
               const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`);
               const data = await response.json();
-              const procesarHoja = (arr, origen) => (arr || []).filter(e => e.numeroInventario || e.nombre).map(e => ({...e, origen, id: `${origen}-${e.id}`}));
-              setEquipos([...procesarHoja(data.propio, 'Propio'), ...procesarHoja(data.comodato, 'Comodato'), ...procesarHoja(data.renta, 'Renta')]);
               
-              // Guardar el historial de OS de Jotform
-              if (data.historial) {
+              // ==========================================
+              // CORRECCIÓN: MANEJO SEGURO DE ARREGLOS
+              // Aseguramos que data.propio, data.comodato, etc., sean arreglos antes de procesarlos.
+              // Si la hoja está vacía o el backend falla al leerla, mandamos un [] por defecto.
+              // ==========================================
+              const safePropio = Array.isArray(data.propio) ? data.propio : [];
+              const safeComodato = Array.isArray(data.comodato) ? data.comodato : [];
+              const safeRenta = Array.isArray(data.renta) ? data.renta : [];
+
+              const procesarHoja = (arr, origen) => arr.filter(e => e.numeroInventario || e.nombre).map(e => ({...e, origen, id: `${origen}-${e.id}`}));
+              
+              setEquipos([
+                  ...procesarHoja(safePropio, 'Propio'), 
+                  ...procesarHoja(safeComodato, 'Comodato'), 
+                  ...procesarHoja(safeRenta, 'Renta')
+              ]);
+              
+              // Guardar el historial de OS de Jotform, asegurando que sea un arreglo
+              if (data.historial && Array.isArray(data.historial)) {
                   setHistorialGlobal(data.historial);
+              } else {
+                  setHistorialGlobal([]);
               }
 
-            } catch (error) { console.error(error); } finally { setIsSyncing(false); }
+            } catch (error) { 
+                console.error("Error al sincronizar datos:", error); 
+            } finally { 
+                setIsSyncing(false); 
+            }
           };
 
           const directSaveToSheets = async (equipo) => {
