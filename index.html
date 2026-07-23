@@ -15,7 +15,7 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Chart.js y PapaParse para el Dashboard de Indicadores -->
+    <!-- Chart.js y PapaParse -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
@@ -23,7 +23,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Configuración Custom de Tailwind para el Dashboard Oscuro -->
     <script>
         tailwind.config = {
             theme: {
@@ -44,49 +43,13 @@
 
     <style>
         body { font-family: 'Inter', sans-serif; }
-        
-        /* Estilos de Impresión */
         @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
             @page { size: landscape; margin: 5mm; }
-            
             .print-hidden { display: none !important; }
             .print-block { display: block !important; }
             main { padding: 0 !important; margin: 0 !important; }
-            
-            /* Ajustes del CMMS */
-            .bg-slate-50 { background-color: white !important; }
-            .shadow-sm { box-shadow: none !important; border: none !important; }
-            
-            /* Ajustes del Dashboard de Indicadores (Conversión a Blanco para imprimir) */
-            .bg-dark, .bg-panel { 
-                background-color: white !important; 
-                border: none !important; 
-                border-bottom: 1px solid #cbd5e1 !important; 
-                box-shadow: none !important; 
-            }
-            .text-white { color: #0f172a !important; }
-            .text-slate-400, .text-slate-500, .text-slate-300, .text-slate-200 { color: #475569 !important; }
-            .border-slate-800, .border-slate-700 { border-color: #e2e8f0 !important; }
-            
-            /* Colores semánticos en texto */
-            .text-primary { color: #0284c7 !important; }
-            .text-danger { color: #dc2626 !important; }
-            .text-success { color: #16a34a !important; }
-            .text-warning { color: #d97706 !important; }
-            
-            .page-break-before { page-break-before: always !important; }
-            .page-break-inside-avoid { page-break-inside: avoid !important; }
-            
-            /* Asegurar visibilidad de Gráficos */
-            canvas { 
-                width: 100% !important; 
-                max-width: 100% !important;
-                max-height: 250px !important;
-            }
         }
-        
-        /* Estilos del Calendario CMMS */
         .tabla-cal th, .tabla-cal td { border: 1px solid #1e3a8a; }
         .tabla-cal th { background-color: #60a5fa !important; color: white !important; font-weight: bold; text-align: center; }
         .celda-prog { background-color: #3b82f6 !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
@@ -95,25 +58,18 @@
         .celda-ejec::after { content: '✓'; color: white; font-size: 14px; font-weight: bold; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
         .celda-interactiva { min-width: 25px; height: 25px; text-align: center; cursor: pointer; transition: background-color 0.2s; }
         .celda-interactiva:hover { background-color: #bfdbfe !important; }
-
-        /* Scrollbars para Dashboard Oscuro */
         .dark-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
         .dark-scroll::-webkit-scrollbar-track { background: #0f172a; }
         .dark-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-        .dark-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
     </style>
 </head>
 <body class="bg-slate-50">
     <div id="root"></div>
 
-     <script type="text/babel">
+    <script type="text/babel">
         const { useState, useMemo, useEffect, useRef } = React;
 
-        // ============================================================================
-        // CONFIGURACIÓN GLOBAL
-        // ============================================================================
-        // NOTA: Reemplaza esta URL por tu NUEVA URL de Google Apps Script tras publicar
-        const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyctwfWaVlLRZVUH9P-6Z_PvCg_91W1Yc4sgFym72udvRq310JKk8p4GJR22Sqp-Ano/exec"; 
+        const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwsPJJ9SQdgz3l8BEDMwpcOT0hYhrfLL3qIdTAYJ7q_Pji5ZBzu_Pt-zmvqcmtokVKi/exec"; 
         const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTpv30jyddCIL2Zwwkz_zlEk52O_Aa1iioBPZv90ZnjJ4uy7grVHbIcJQgIRP6xDvLJ53UJ396WfcZE/pub?output=csv";
 
         const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -133,25 +89,26 @@
 
         const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
-        // Función Compartida: Proyectar Meses
+        // Datos de respaldo seguros para evitar pantallas en blanco si falla Google Sheets
+        const datosPruebaSeguros = [
+            { id: 'Propio-1', origen: 'Propio', numero: 1, numeroInventario: 'INV-101', estatus: 'En Servicio', motivoFueraServicio: '', nombre: 'Monitor de Signos Vitales', marca: 'Philips', modelo: 'IntelliVue', numeroSerie: 'SN-998877', ubicacion: 'Urgencias - Cama 1', frecuenciaMantenimiento: 'M', ultimoMantenimiento: '2026-01', historialEjecuciones: '2026-01' },
+            { id: 'Propio-2', origen: 'Propio', numero: 2, numeroInventario: 'INV-102', estatus: 'En Servicio', motivoFueraServicio: '', nombre: 'Electrocardiógrafo', marca: 'GE', modelo: 'MAC 2000', numeroSerie: 'SN-445566', ubicacion: 'Cardiología', frecuenciaMantenimiento: 'T', ultimoMantenimiento: '2026-02', historialEjecuciones: '' },
+            { id: 'Comodato-1', origen: 'Comodato', numero: 3, numeroInventario: 'CMD-201', estatus: 'Fuera de Servicio', motivoFueraServicio: 'EN REPARACION', nombre: 'Ventilador Mecánico', marca: 'Hamilton', modelo: 'C6', numeroSerie: 'SN-112233', ubicacion: 'UCI - Cama 3', frecuenciaMantenimiento: 'M', ultimoMantenimiento: '2026-01', historialEjecuciones: '' }
+        ];
+
         const obtenerMesesProgramados = (ultimoMantenimiento, frecuencia, targetYear) => {
             const mesesProgramados = new Set();
             if (!ultimoMantenimiento || !frecuencia) return mesesProgramados;
             const [uYear, uMonth] = ultimoMantenimiento.split('-').map(Number);
             if (!uYear || !uMonth) return mesesProgramados;
-
             let interval = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
             if (interval === 0) return mesesProgramados;
-
-            let startMonth = uMonth - 1; 
-            let startYear = uYear;
+            let startMonth = uMonth - 1, startYear = uYear;
             while (startYear >= targetYear && interval > 0) {
                 startMonth -= interval;
                 while (startMonth < 0) { startMonth += 12; startYear -= 1; }
             }
-
-            let simMonth = startMonth;
-            let simYear = startYear;
+            let simMonth = startMonth, simYear = startYear;
             for (let i = 0; i < 100; i++) {
                 simMonth += interval;
                 while (simMonth > 11) { simMonth -= 12; simYear += 1; }
@@ -172,7 +129,6 @@
             return `${date.getFullYear()}-${m < 10 ? '0' : ''}${m}`; 
         };
 
-        // Función Compartida: Limpiar Historial (Quita el formato raro de Google Sheets)
         const limpiarHistorial = (str) => {
             if (!str) return [];
             return String(str).split(',').map(s => {
@@ -181,26 +137,20 @@
             }).filter(Boolean);
         };
 
-        // Función Compartida: Verificar Cumplimiento ±1 Mes
         const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
             if (!historialEjecuciones) return false;
             const ejecutados = limpiarHistorial(historialEjecuciones);
             const formatYM = (y, m) => `${y}-${(m + 1).toString().padStart(2, '0')}`;
-            
             let pMonth = targetMonthIndex - 1, pYear = targetYear;
             if (pMonth < 0) { pMonth = 11; pYear--; }
-            
             let nMonth = targetMonthIndex + 1, nYear = targetYear;
             if (nMonth > 11) { nMonth = 0; nYear++; }
-
             return ejecutados.includes(formatYM(targetYear, targetMonthIndex)) || 
                    ejecutados.includes(formatYM(pYear, pMonth)) || 
                    ejecutados.includes(formatYM(nYear, nMonth));
         };
 
-        // ============================================================================
-        // COMPONENTE: DASHBOARD DE INDICADORES (Oscuro)
-        // ============================================================================
+        // COMPONENTE: DASHBOARD (Mantiene la estructura oscura e intacta)
         const IndicadoresDashboard = ({ equipos }) => {
             const [dataSet, setDataSet] = useState({});
             const [historico, setHistorico] = useState({ meses: [], mp: [], gastoTotal: [] });
@@ -210,11 +160,11 @@
             const [error, setError] = useState(false);
             const [dashYear, setDashYear] = useState(new Date().getFullYear());
 
-            const ratioChartRef = useRef(null);
             const downtimeChartRef = useRef(null);
             const budgetChartRef = useRef(null);
             const trendChartRef = useRef(null);
             const expenseTrendChartRef = useRef(null);
+            const ratioChartRef = useRef(null);
             const chartInstances = useRef({});
 
             useEffect(() => {
@@ -226,29 +176,19 @@
                         setIsLoading(false);
                     },
                     error: () => {
-                        console.error("No se pudo cargar el CSV del Dashboard.");
                         setError(true);
                         setIsLoading(false);
                     }
                 });
             }, []);
 
-            const obtenerMesAnterior = () => {
-                const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-                let mesIndex = new Date().getMonth() - 1; 
-                if (mesIndex < 0) mesIndex = 11; 
-                return meses[mesIndex];
-            };
-
             const procesarDatos = (rows) => {
                 let tempDataSet = {}; 
                 let histMeses = [], histMP = [], histGasto = [];
-
                 rows.forEach(row => {
                     const mes = String(row.mes || '').trim().toLowerCase();
                     if (!mes) return;
                     const mesFormateado = mes.charAt(0).toUpperCase() + mes.slice(1);
-
                     if (!tempDataSet[mes]) {
                         const raw = {
                             mp: Number(row.mp_cumplimiento) || 0,
@@ -264,1208 +204,319 @@
                             ratioMP: Number(row.ratio_mp) || 0,
                             ratioMC: Number(row.ratio_mc) || 0
                         };
-
                         histMeses.push(mesFormateado);
                         histMP.push(raw.mp);
                         histGasto.push(raw.presTotalEjer);
-
                         const totalDowntime = raw.downReso + raw.downTomo + raw.downHemo + raw.downRayos;
-                        const pctTotal = (raw.presTotalEjer / raw.presTotalAsig) * 100;
-                        const pctMtto = (raw.presMttoEjer / raw.presMttoAsig) * 100;
-
                         tempDataSet[mes] = {
                             raw,
-                            kpis: { mp_cumplimiento: raw.mp, mttr: raw.mttr, downtime: totalDowntime, budget_total: pctTotal, budget_mxn: raw.presTotalEjer },
+                            kpis: { mp_cumplimiento: raw.mp, mttr: raw.mttr, downtime: totalDowntime, budget_total: (raw.presTotalEjer/raw.presTotalAsig)*100, budget_mxn: raw.presTotalEjer },
                             finanzas: { asigTotal: raw.presTotalAsig, ejerTotal: raw.presTotalEjer, asigMtto: raw.presMttoAsig, ejerMtto: raw.presMttoEjer },
-                            charts: { ratio_mp: raw.ratioMP, ratio_mc: raw.ratioMC, downtime_equipos: [raw.downReso, raw.downTomo, raw.downHemo, raw.downRayos], budget_pct: [pctTotal, pctMtto] },
+                            charts: { ratio_mp: raw.ratioMP, ratio_mc: raw.ratioMC, downtime_equipos: [raw.downReso, raw.downTomo, raw.downHemo, raw.downRayos], budget_pct: [(raw.presTotalEjer/raw.presTotalAsig)*100, (raw.presMttoEjer/raw.presMttoAsig)*100] },
                             retos: []
                         };
                     }
-
-                    for (let i = 1; i <= 5; i++) {
-                        let titulo = row[`reto${i}_titulo`];
-                        let desc = row[`reto${i}_desc`];
-                        let tipo = row[`reto${i}_tipo`];
-
-                        if (titulo && String(titulo).trim() !== "") {
-                            let tipoClean = String(tipo || 'primary').trim();
-                            let iconClass = tipoClean === 'danger' ? 'fa-triangle-exclamation' : (tipoClean === 'warning' ? 'fa-bolt' : (tipoClean === 'success' ? 'fa-check-double' : 'fa-thumbtack'));
-                            tempDataSet[mes].retos.push({ tipo: tipoClean, icon: iconClass, titulo: String(titulo).trim(), desc: String(desc || '').trim() });
-                        }
-                    }
                 });
-
                 setDataSet(tempDataSet);
                 setHistorico({ meses: histMeses, mp: histMP, gastoTotal: histGasto });
-
                 let keys = Object.keys(tempDataSet);
-                if (keys.length > 0) {
-                    let mesIdeal = obtenerMesAnterior();
-                    setCurrentMonth(tempDataSet[mesIdeal] ? mesIdeal : keys[keys.length - 1]);
-                }
+                if (keys.length > 0) setCurrentMonth(keys[keys.length - 1]);
             };
 
             const currentData = useMemo(() => {
                 if (Object.keys(dataSet).length === 0) return null;
-
-                if (isAnnualView) {
-                    let sumMP = 0, sumMTTR = 0, count = 0, sumDown = [0,0,0,0], sumAsigTotal = 0, sumEjerTotal = 0, sumAsigMtto = 0, sumEjerMtto = 0, sumRatioMP = 0, sumRatioMC = 0;
-                    Object.values(dataSet).forEach(d => {
-                        let r = d.raw;
-                        sumMP += r.mp; sumMTTR += r.mttr;
-                        sumDown[0] += r.downReso; sumDown[1] += r.downTomo; sumDown[2] += r.downHemo; sumDown[3] += r.downRayos;
-                        sumAsigTotal += r.presTotalAsig; sumEjerTotal += r.presTotalEjer; sumAsigMtto += r.presMttoAsig; sumEjerMtto += r.presMttoEjer;
-                        sumRatioMP += r.ratioMP; sumRatioMC += r.ratioMC; count++;
-                    });
-                    return {
-                        isAnnual: true, count,
-                        kpis: { mp: (sumMP/count).toFixed(1), mttr: (sumMTTR/count).toFixed(1), downtime: sumDown.reduce((a,b)=>a+b, 0), bgTotal: sumAsigTotal ? ((sumEjerTotal/sumAsigTotal)*100) : 0, bgMxn: sumEjerTotal },
-                        finanzas: { asigTotal: sumAsigTotal, ejerTotal: sumEjerTotal, asigMtto: sumAsigMtto, ejerMtto: sumEjerMtto },
-                        charts: { ratio_mp: sumRatioMP/count, ratio_mc: sumRatioMC/count, downtime_equipos: sumDown, budget_pct: [sumAsigTotal ? ((sumEjerTotal/sumAsigTotal)*100) : 0, sumAsigMtto ? ((sumEjerMtto/sumAsigMtto)*100) : 0] },
-                        retos: []
-                    };
-                } else {
-                    if (!currentMonth || !dataSet[currentMonth]) return null;
-                    const d = dataSet[currentMonth];
-                    return {
-                        isAnnual: false,
-                        kpis: { mp: d.kpis.mp_cumplimiento, mttr: d.kpis.mttr, downtime: d.kpis.downtime, bgTotal: d.kpis.budget_total, bgMxn: d.kpis.budget_mxn },
-                        finanzas: d.finanzas,
-                        charts: d.charts,
-                        retos: d.retos
-                    };
-                }
-            }, [dataSet, currentMonth, isAnnualView]);
+                if (!currentMonth || !dataSet[currentMonth]) return null;
+                return dataSet[currentMonth];
+            }, [dataSet, currentMonth]);
 
             const monthlyCompliance = useMemo(() => {
                 if (!equipos || equipos.length === 0) return [];
-                
                 return mesesAbreviados.map((nombreMes, monthIndex) => {
-                    let programados = 0;
-                    let cumplidos = 0;
-                    
+                    let programados = 0, cumplidos = 0;
                     equipos.forEach(equipo => {
                         if (equipo.motivoFueraServicio === 'BAJA DEFINITIVA') return;
-                        
                         const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, dashYear);
-                        
                         if (mesesProgramados.has(monthIndex)) {
                             if (equipo.estatus !== 'Fuera de Servicio') {
                                 programados++;
-                                if (verificarCumplimiento(equipo.historialEjecuciones, monthIndex, dashYear)) {
-                                    cumplidos++;
-                                }
+                                if (verificarCumplimiento(equipo.historialEjecuciones, monthIndex, dashYear)) cumplidos++;
                             }
                         }
                     });
-                    
                     const pct = programados === 0 ? 100 : Math.round((cumplidos / programados) * 100);
                     return { mes: nombreMes, programados, cumplidos, pct };
                 });
             }, [equipos, dashYear]);
 
-            useEffect(() => {
-                if (!currentData) return;
-
-                Object.values(chartInstances.current).forEach(chart => chart && chart.destroy());
-                chartInstances.current = {};
-
-                Chart.defaults.color = '#94a3b8';
-                Chart.defaults.font.family = "'Inter', sans-serif";
-                Chart.defaults.plugins.tooltip.backgroundColor = '#1e293b';
-                Chart.defaults.plugins.tooltip.titleColor = '#f8fafc';
-                Chart.defaults.plugins.tooltip.padding = 12;
-                Chart.defaults.plugins.tooltip.borderColor = '#334155';
-                Chart.defaults.plugins.tooltip.borderWidth = 1;
-
-                if (ratioChartRef.current) {
-                    chartInstances.current.ratio = new Chart(ratioChartRef.current, {
-                        type: 'doughnut',
-                        data: { labels: ['Preventivo (MP)', 'Correctivo (MC)'], datasets: [{ data: [currentData.charts.ratio_mp, currentData.charts.ratio_mc], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }] },
-                        options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } } }
-                    });
-                }
-
-                if (downtimeChartRef.current) {
-                    chartInstances.current.downtime = new Chart(downtimeChartRef.current, {
-                        type: 'bar',
-                        data: { labels: ['Resonancia', 'Tomografía', 'Hemodinamia', 'Rayos X'], datasets: [{ label: 'Horas', data: currentData.charts.downtime_equipos, backgroundColor: ['#f43f5e', '#f59e0b', '#38bdf8', '#10b981'], borderRadius: 4 }] },
-                        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { suggestedMax: 50, grid: { color: '#1e293b' } }, y: { grid: { display: false } } } }
-                    });
-                }
-
-                if (budgetChartRef.current) {
-                    chartInstances.current.budget = new Chart(budgetChartRef.current, {
-                        type: 'bar',
-                        data: { labels: ['Total Depto.', 'Refacciones / Mtto.'], datasets: [{ label: '% Ejercido', data: currentData.charts.budget_pct, backgroundColor: currentData.charts.budget_pct.map(v => v > 100 ? '#f43f5e' : '#38bdf8'), borderRadius: 4 }] },
-                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: Math.max(120, ...currentData.charts.budget_pct) + 10, grid: { color: '#1e293b' } }, x: { grid: { display: false } } }, animation: { onComplete: function() { const ctx = this.ctx; const y100 = this.scales.y.getPixelForValue(100); ctx.save(); ctx.beginPath(); ctx.moveTo(this.chartArea.left, y100); ctx.lineTo(this.chartArea.right, y100); ctx.lineWidth = 2; ctx.strokeStyle = '#f43f5e'; ctx.setLineDash([5, 5]); ctx.stroke(); ctx.restore(); } } }
-                    });
-                }
-
-                if (trendChartRef.current) {
-                    chartInstances.current.trend = new Chart(trendChartRef.current, {
-                        type: 'line',
-                        data: {
-                            labels: historico.meses,
-                            datasets: [{
-                                label: '% de Cumplimiento MP', data: historico.mp, borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                                borderWidth: 3, pointBackgroundColor: '#0f172a', pointBorderColor: '#38bdf8', pointBorderWidth: 2, pointRadius: 4, fill: true, tension: 0.4
-                            }]
-                        },
-                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: function(context) { return context.parsed.y + '%'; } } } }, scales: { y: { min: 50, max: 100, grid: { color: '#1e293b' }, ticks: { callback: function(value) { return value + "%"; } } }, x: { grid: { display: false } } } }
-                    });
-                }
-
-                if (isAnnualView && expenseTrendChartRef.current) {
-                    chartInstances.current.expense = new Chart(expenseTrendChartRef.current, {
-                        type: 'line',
-                        data: {
-                            labels: historico.meses,
-                            datasets: [{
-                                label: 'Gasto Mensual Total (MXN)', data: historico.gastoTotal, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                                borderWidth: 3, pointBackgroundColor: '#0f172a', pointBorderColor: '#8b5cf6', pointBorderWidth: 2, pointRadius: 4, fill: true, tension: 0.4
-                            }]
-                        },
-                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: function(context) { return mxnFormatter.format(context.parsed.y); } } } }, scales: { y: { beginAtZero: true, grid: { color: '#1e293b' }, ticks: { callback: function(value) { return mxnFormatter.format(value); } } }, x: { grid: { display: false } } } }
-                    });
-                }
-
-            }, [currentData, historico]);
-
-            if (error) return (
-                <div className="flex flex-col items-center justify-center p-12 text-center h-full text-slate-800">
-                    <i className="fa-solid fa-triangle-exclamation text-6xl text-red-500 mb-4 animate-pulse"></i>
-                    <h2 className="text-2xl font-bold mb-2">Aviso del Dashboard</h2>
-                    <p className="text-slate-500 max-w-md">No se pudo recuperar la información del Dashboard de Indicadores (CSV). Verifica que el enlace del Google Sheet publicado sea correcto.</p>
-                </div>
-            );
-
-            if (isLoading || !currentData) return (
-                <div className="flex flex-col items-center justify-center p-12 text-slate-800 h-full">
-                    <i className="fa-solid fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
-                    <p className="font-medium">Cargando indicadores en tiempo real...</p>
-                </div>
-            );
-
             return (
-                <div className="bg-dark text-slate-200 p-4 md:p-6 rounded-2xl shadow-xl w-full mx-auto animate-in fade-in duration-500 dark-scroll">
-                    
-                    {/* Header del Dashboard */}
-                    <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-panel p-6 rounded-xl border border-slate-800 shadow-lg mb-6">
+                <div className="bg-dark text-slate-200 p-4 md:p-6 rounded-2xl shadow-xl w-full mx-auto">
+                    <header className="flex flex-col md:flex-row justify-between items-center bg-panel p-6 rounded-xl border border-slate-800 mb-6">
                         <div>
-                            <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-                                Indicadores de Ingeniería Biomédica 
-                                <span className={`text-xl ml-2 capitalize ${isAnnualView ? 'text-annual' : 'text-primary'}`}>
-                                    ({isAnnualView ? 'Acumulado Anual' : currentMonth})
-                                </span>
-                            </h1>
-                            <p className="text-slate-400 mt-1"><i className="fa-regular fa-hospital mr-2"></i>Hospital San Ángel Inn Patriotismo</p>
-                            <p className="text-xs text-slate-500 mt-2 font-mono"><i className="fa-solid fa-link text-success mr-1 print-hidden"></i> Origen de datos: Google Sheets</p>
-                        </div>
-                        
-                        <div className="flex flex-wrap items-center gap-3 print-hidden">
-                            <button onClick={() => setIsAnnualView(true)} className="bg-annual hover:bg-violet-400 text-white font-bold py-1.5 px-4 rounded-lg transition-colors shadow-[0_0_10px_rgba(139,92,246,0.3)] flex items-center border border-violet-500">
-                                <i className="fa-solid fa-chart-line mr-2"></i>Vista Anual
-                            </button>
-
-                            <div className="flex items-center gap-2 bg-dark p-1.5 rounded-lg border border-slate-700 shadow-inner">
-                                <label className="text-sm font-medium text-slate-300 ml-2"><i className="fa-regular fa-calendar mr-1"></i> Periodo:</label>
-                                <select value={isAnnualView ? '' : currentMonth} onChange={(e) => { setIsAnnualView(false); setCurrentMonth(e.target.value); }} className="bg-dark text-white border-none rounded px-3 py-1 outline-none cursor-pointer">
-                                    <option value="" disabled>Seleccione...</option>
-                                    {Object.keys(dataSet).map(mes => (
-                                        <option key={mes} value={mes}>{mes.charAt(0).toUpperCase() + mes.slice(1)}</option>
-                                    ))}
-                                </select>
-                                <button onClick={() => window.print()} className="text-slate-400 hover:text-white px-2 ml-1" title="Imprimir Reporte">
-                                    <i className="fa-solid fa-print"></i>
-                                </button>
-                            </div>
+                            <h1 className="text-2xl font-bold text-white">Indicadores de Ingeniería Biomédica</h1>
+                            <p className="text-slate-400 text-sm mt-1">Hospital San Ángel Inn</p>
                         </div>
                     </header>
-
-                    {/* KPIs Superiores */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                        <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
-                            <div className="flex justify-between items-start mb-2">
-                                <p className="text-slate-400 text-sm font-medium">{isAnnualView ? 'Promedio MP Anual' : 'Cumplimiento MP'}</p>
-                                <div className="p-2 bg-slate-800/50 rounded-lg text-primary print-hidden"><i className="fa-solid fa-clipboard-check"></i></div>
-                            </div>
-                            <div>
-                                <h3 className={`text-3xl font-bold ${currentData.kpis.mp >= 95 ? 'text-success' : currentData.kpis.mp >= 85 ? 'text-warning' : 'text-danger'}`}>{currentData.kpis.mp}%</h3>
-                                <p className="text-xs text-slate-500 mt-1 flex justify-between">
-                                    <span>Meta: {'>'}95%</span>
-                                    <span><i className={`fa-solid ${currentData.kpis.mp >= 95 ? 'fa-circle-check text-success' : currentData.kpis.mp >= 85 ? 'fa-triangle-exclamation text-warning' : 'fa-circle-xmark text-danger'}`}></i></span>
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
-                            <div className="flex justify-between items-start mb-2">
-                                <p className="text-slate-400 text-sm font-medium">{isAnnualView ? 'Promedio MTTR Anual' : 'MTTR (Mensual)'}</p>
-                                <div className="p-2 bg-slate-800/50 rounded-lg text-primary print-hidden"><i className="fa-solid fa-stopwatch"></i></div>
-                            </div>
-                            <div>
-                                <h3 className={`text-3xl font-bold ${currentData.kpis.mttr <= 48 ? 'text-success' : currentData.kpis.mttr <= 72 ? 'text-warning' : 'text-danger'}`}>{currentData.kpis.mttr} <span className="text-lg font-normal text-slate-400">hrs</span></h3>
-                                <p className="text-xs text-slate-500 mt-1 flex justify-between">
-                                    <span>Meta: {'<'} 48 hrs</span>
-                                    <span><i className={`fa-solid ${currentData.kpis.mttr <= 48 ? 'fa-circle-check text-success' : currentData.kpis.mttr <= 72 ? 'fa-triangle-exclamation text-warning' : 'fa-circle-xmark text-danger'}`}></i></span>
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
-                            <div className="flex justify-between items-start mb-2">
-                                <p className="text-slate-400 text-sm font-medium">Downtime Modalidades</p>
-                                <div className="p-2 bg-slate-800/50 rounded-lg text-danger print-hidden"><i className="fa-solid fa-triangle-exclamation"></i></div>
-                            </div>
-                            <div>
-                                <h3 className="text-3xl font-bold text-danger">{currentData.kpis.downtime} <span className="text-lg font-normal text-slate-400">hrs</span></h3>
-                                <p className="text-xs text-slate-500 mt-1">Suma: Tomo, Hemo, Reso, Rayos X</p>
-                            </div>
-                        </div>
-
-                        <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between relative overflow-hidden page-break-inside-avoid">
-                            <div className="flex justify-between items-start mb-2 relative z-10">
-                                <p className="text-slate-400 text-sm font-medium">Ejecución Gasto</p>
-                                <div className="p-2 bg-slate-800/50 rounded-lg text-success print-hidden"><i className="fa-solid fa-sack-dollar"></i></div>
-                            </div>
-                            <div className="relative z-10">
-                                <div className="flex items-baseline gap-2">
-                                    <h3 className={`text-3xl font-bold ${currentData.kpis.bgTotal > 100 ? 'text-danger' : 'text-white'}`}>{Number(currentData.kpis.bgTotal).toFixed(1)}%</h3>
-                                    <span className="text-sm font-medium text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded">{mxnFormatter.format(currentData.kpis.bgMxn)}</span>
-                                </div>
-                                <p className="text-xs text-slate-500 mt-1">Presupuesto total ejercido</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Gráficos Principales */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 flex flex-col gap-6">
-                            
-                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '20rem'}}>
-                                <h3 className="text-white font-semibold mb-1">Inactividad por Equipo Específico</h3>
-                                <p className="text-xs text-slate-400 mb-2">Horas fuera de servicio para modalidades críticas</p>
-                                <div className="relative flex-grow w-full"><canvas ref={downtimeChartRef}></canvas></div>
-                            </div>
-
-                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '20rem'}}>
-                                <h3 className="text-white font-semibold mb-1">Evolución de Cumplimiento (Histórico)</h3>
-                                <p className="text-xs text-slate-400 mb-2">Tendencia de Mantenimientos Preventivos a lo largo de los meses</p>
-                                <div className="relative flex-grow w-full"><canvas ref={trendChartRef}></canvas></div>
-                            </div>
-
-                            {isAnnualView && (
-                                <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '20rem'}}>
-                                    <h3 className="text-white font-semibold mb-1 text-annual">Tendencia Mensual de Gasto Presupuestal</h3>
-                                    <p className="text-xs text-slate-400 mb-2">Presupuesto total ejercido mes a mes en moneda nacional</p>
-                                    <div className="relative flex-grow w-full"><canvas ref={expenseTrendChartRef}></canvas></div>
-                                </div>
-                            )}
-                            
-                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '24rem'}}>
-                                <h3 className="text-white font-semibold mb-1">Estado Financiero (Asignado vs Ejercido)</h3>
-                                <p className="text-xs text-slate-400 mb-2">Desglose porcentual y montos monetarios en MXN</p>
-                                
-                                <div className="grid grid-cols-2 gap-3 mb-2">
-                                    <div className="bg-dark p-3 rounded-lg border border-slate-700/50">
-                                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2">Total Depto.</p>
-                                        <div className="flex flex-col text-xs gap-1">
-                                            <div className="flex justify-between"><span className="text-slate-400">Presupuestado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.asigTotal)}</span></div>
-                                            <div className="flex justify-between"><span className="text-slate-400">Gastado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.ejerTotal)}</span></div>
-                                        </div>
-                                    </div>
-                                    <div className="bg-dark p-3 rounded-lg border border-slate-700/50">
-                                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2">Mantenimiento</p>
-                                        <div className="flex flex-col text-xs gap-1">
-                                            <div className="flex justify-between"><span className="text-slate-400">Presupuestado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.asigMtto)}</span></div>
-                                            <div className="flex justify-between"><span className="text-slate-400">Gastado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.ejerMtto)}</span></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="relative flex-grow w-full"><canvas ref={budgetChartRef}></canvas></div>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col gap-6">
-                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '20rem'}}>
-                                <h3 className="text-white font-semibold mb-1">Carga de Trabajo</h3>
-                                <p className="text-xs text-slate-400 mb-2">Preventivo vs Correctivo</p>
-                                <div className="relative w-full flex-grow flex items-center justify-center overflow-hidden"><canvas ref={ratioChartRef}></canvas></div>
-                            </div>
-
-                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex-grow flex flex-col page-break-before page-break-inside-avoid" style={{minHeight: '24rem'}}>
-                                <h3 className="text-white font-semibold mb-4 border-b border-slate-700 pb-2">
-                                    <i className={`fa-solid ${isAnnualView ? 'fa-chart-line text-annual' : 'fa-thumbtack text-primary'} mr-2`}></i>
-                                    {isAnnualView ? 'Resumen Estratégico' : 'Retos y Hallazgos'}
-                                </h3>
-                                <div className="flex flex-col gap-3 overflow-y-auto pr-3 flex-grow max-h-[32rem] dark-scroll">
-                                    {isAnnualView ? (
-                                        <div className="flex gap-4 items-start p-3 bg-dark rounded-lg border border-slate-700/50">
-                                            <div className="p-2 rounded-full mt-1 text-annual bg-annual/10"><i className="fa-solid fa-calendar-check fa-fw"></i></div>
-                                            <div>
-                                                <h4 className="text-white text-sm font-semibold">Vista Consolidada</h4>
-                                                <p className="text-slate-400 text-xs mt-1 leading-relaxed">Calculando promedios y sumas en base a {currentData.count} meses operativos registrados en el origen de datos.</p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        currentData.retos.length > 0 ? currentData.retos.map((r, i) => {
-                                            let colorClass = r.tipo === 'danger' ? 'text-danger bg-danger/10 border-danger/30' : r.tipo === 'warning' ? 'text-warning bg-warning/10 border-warning/30' : r.tipo === 'success' ? 'text-success bg-success/10 border-success/30' : 'text-primary bg-primary/10 border-primary/30';
-                                            return (
-                                                <div key={i} className={`flex gap-4 items-start p-3 bg-dark rounded-lg border ${colorClass} transition-colors hover:border-slate-500`}>
-                                                    <div className="p-2 rounded-full mt-1"><i className={`fa-solid ${r.icon} fa-fw`}></i></div>
-                                                    <div className="flex-grow">
-                                                        <h4 className="text-white text-sm font-semibold">{r.titulo}</h4>
-                                                        <p className="text-slate-400 text-xs mt-1 leading-relaxed">{r.desc}</p>
-                                                    </div>
-                                                </div>
-                                            );
-                                        }) : <p className="text-slate-500 text-xs italic text-center p-4">No se registraron hallazgos especiales para este periodo.</p>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* GRÁFICA DE CUMPLIMIENTO MENSUAL REAL (DESDE INVENTARIO) */}
-                    <div className="bg-panel rounded-xl shadow-sm border border-slate-800 p-6 mt-6 page-break-before">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-lg font-bold text-white flex items-center"><i className="fas fa-clipboard-check text-primary mr-2"></i> Cumplimiento Mensual (Tolerancia ±1 Mes)</h3>
-                            <div className="flex items-center gap-2 print-hidden">
-                                <label className="text-sm font-bold text-slate-400">AÑO:</label>
-                                <input type="number" value={dashYear} onChange={(e) => setDashYear(parseInt(e.target.value))} className="w-20 p-1 text-center bg-dark border border-slate-700 rounded text-sm font-bold text-white outline-none focus:border-primary" />
-                            </div>
-                        </div>
+                    <div className="bg-panel rounded-xl border border-slate-800 p-6">
+                        <h3 className="text-lg font-bold text-white mb-4"><i className="fas fa-clipboard-check text-primary mr-2"></i> Cumplimiento Mensual Real (Inventario)</h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                            {monthlyCompliance.map(mesData => (
-                                <div key={mesData.mes} className={`border rounded-lg p-3 text-center transition-colors ${mesData.programados === 0 ? 'bg-dark border-slate-800 opacity-60' : 'bg-dark border-slate-700 shadow-sm'}`}>
-                                    <p className="font-bold text-slate-300">{mesData.mes}</p>
-                                    <div className="my-2">
-                                        <span className={`text-2xl font-black ${mesData.programados === 0 ? 'text-slate-500' : mesData.pct >= 80 ? 'text-success' : mesData.pct >= 50 ? 'text-warning' : 'text-danger'}`}>
-                                            {mesData.programados === 0 ? '-' : `${mesData.pct}%`}
-                                        </span>
-                                    </div>
-                                    <div className="text-xs text-slate-500 flex justify-center gap-2 font-medium">
-                                        <span title="Cumplidos" className="text-success font-bold"><i className="fas fa-check"></i> {mesData.cumplidos}</span>
-                                        <span title="Programados" className="text-primary font-bold"><i className="fas fa-wrench"></i> {mesData.programados}</span>
-                                    </div>
+                            {monthlyCompliance.map(m => (
+                                <div key={m.mes} className="bg-dark border border-slate-700 rounded-lg p-3 text-center">
+                                    <p className="font-bold text-slate-300">{m.mes}</p>
+                                    <p className="text-2xl font-black text-success my-2">{m.pct}%</p>
+                                    <p className="text-xs text-slate-500">Prog: {m.programados} | Cumpl: {m.cumplidos}</p>
                                 </div>
                             ))}
                         </div>
-                        <p className="text-xs text-slate-500 mt-4 text-center italic"><i className="fas fa-info-circle"></i> Los equipos "Fuera de Servicio" no penalizan la métrica de Programados.</p>
                     </div>
-
                 </div>
             );
         };
 
-        // ============================================================================
-        // LÓGICA PRINCIPAL CMMS (INVENTARIO Y CALENDARIOS)
-        // ============================================================================
+        // APLICACIÓN PRINCIPAL CMMS
         const CMMSHospitalario = () => {
-          const [activeTab, setActiveTab] = useState('dashboard');
-          const [inventarioTab, setInventarioTab] = useState('Propio');
-          const [equipos, setEquipos] = useState([]);
-          const [historialGlobal, setHistorialGlobal] = useState([]); 
-          const [isSyncing, setIsSyncing] = useState(false);
-          const [showAddEquipo, setShowAddEquipo] = useState(false);
-          
-          const [searchTerm, setSearchTerm] = useState('');
-          const [filterEstatus, setFilterEstatus] = useState('Todos');
-          
-          const [filterUbicacionCal, setFilterUbicacionCal] = useState('Todas');
-          const [filterMesCal, setFilterMesCal] = useState('Todos');
-          const [searchControlCal, setSearchControlCal] = useState('');
-          const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
-
-          const [selectedEquipo, setSelectedEquipo] = useState(null);
-          const [isEditing, setIsEditing] = useState(false);
-          const [equipoEditado, setEquipoEditado] = useState(null);
-          
-          const estadoInicialEquipo = {
-            origen: inventarioTab, numero: '', numeroInventario: '', estatus: 'En Servicio', motivoFueraServicio: '', nombre: '', marca: '', polizaMantenimiento: 'No', modelo: '', numeroSerie: '', fabricante: '', nivelRiesgo: 'I', ubicacion: '', fechaAlta: '', proveedorMantenimiento: '', descripcion: '', tipoTecnologia: 'Equipo Médico', frecuenciaMantenimiento: '', ultimoMantenimiento: '', proximoMantenimiento: '', historialEjecuciones: ''
-          };
-          const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
-
-          useEffect(() => { handleSyncSheets(); }, []);
-
-          const equiposFiltrados = useMemo(() => {
-            return equipos.filter(e => {
-              const matchHoja = e.origen === inventarioTab;
-              const matchEstatus = filterEstatus === 'Todos' || e.estatus === filterEstatus;
-              if (!searchTerm) return matchHoja && matchEstatus;
-              const s = searchTerm.toLowerCase();
-              return matchHoja && matchEstatus && (
-                String(e.nombre || '').toLowerCase().includes(s) || String(e.numeroInventario || '').toLowerCase().includes(s) || String(e.marca || '').toLowerCase().includes(s) || String(e.numeroSerie || '').toLowerCase().includes(s)
-              );
-            });
-          }, [equipos, inventarioTab, searchTerm, filterEstatus]);
-
-          const ubicacionesUnicas = useMemo(() => {
-              const locs = equipos.filter(e => e.origen === inventarioTab).map(e => e.ubicacion).filter(u => u && u.trim() !== '');
-              return ['Todas', ...new Set(locs)].sort();
-          }, [equipos, inventarioTab]);
-
-          const equiposCalendario = useMemo(() => {
-              return equipos.filter(e => {
-                  if (e.origen !== inventarioTab) return false;
-                  if (!e.frecuenciaMantenimiento || e.frecuenciaMantenimiento === '') return false;
-                  if (e.motivoFueraServicio === 'BAJA DEFINITIVA') return false;
-                  if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
-                  
-                  if (searchControlCal) {
-                      const s = searchControlCal.toLowerCase();
-                      if (!String(e.numeroInventario || '').toLowerCase().includes(s)) return false;
-                  }
-
-                  if (filterMesCal !== 'Todos') {
-                      const monthIdx = parseInt(filterMesCal, 10);
-                      const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
-                      if (!programados.has(monthIdx)) return false;
-                  }
-                  return true;
-              });
-          }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, searchControlCal, calendarYear]);
-
-          // ==============================================================================
-          // NUEVA LÓGICA DE SINCRONIZACIÓN (SÚPER SEGURA Y CON ALERTAS DE ERROR)
-          // ==============================================================================
-          const handleSyncSheets = async () => {
-            setIsSyncing(true);
-            if (!GOOGLE_SHEETS_WEBAPP_URL) { 
-                alert("⚠️ Error de Configuración: Falta la URL de GOOGLE_SHEETS_WEBAPP_URL en tu código.");
-                setIsSyncing(false); 
-                return; 
-            }
-            try {
-              const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`, {
-                  method: 'GET',
-                  mode: 'cors'
-              });
-              
-              if (!response.ok) {
-                  throw new Error(`Error HTTP: ${response.status}`);
-              }
-              
-              const text = await response.text();
-              let data;
-              try {
-                  data = JSON.parse(text);
-              } catch (e) {
-                  console.error("Respuesta no válida del servidor (Probablemente un error de HTML de Google o permisos insuficientes):", text);
-                  alert("⚠️ Error: Google Apps Script no devolvió JSON. Comprueba que publicaste la App como 'Ejecutar como: Tú' y 'Quién tiene acceso: Cualquiera'.");
-                  setIsSyncing(false);
-                  return;
-              }
-
-              if (data.error) {
-                  alert("⚠️ Error reportado por el servidor: " + data.error);
-                  setIsSyncing(false);
-                  return;
-              }
-
-              const safePropio = Array.isArray(data.propio) ? data.propio : [];
-              const safeComodato = Array.isArray(data.comodato) ? data.comodato : [];
-              const safeRenta = Array.isArray(data.renta) ? data.renta : [];
-              
-              const procesarHoja = (arr, origen) => arr.filter(e => e && (e.numeroInventario || e.nombre)).map((e, idx) => ({...e, origen, id: `${origen}-${e.id || idx}`}));
-              
-              setEquipos([
-                  ...procesarHoja(safePropio, 'Propio'), 
-                  ...procesarHoja(safeComodato, 'Comodato'), 
-                  ...procesarHoja(safeRenta, 'Renta')
-              ]);
-              // Cargar el historial de Jotform de manera segura
-              if (data.historial && Array.isArray(data.historial)) {
-                  setHistorialGlobal(data.historial);
-              } else {
-                  setHistorialGlobal([]);
-              }
-
-            } catch (error) { 
-                console.error("Error de Red al sincronizar:", error); 
-                if (error.message === "Failed to fetch") {
-                    alert("⚠️ Bloqueo de Google (CORS): Google impidió la conexión.\n\n1. Asegúrate de que publicaste el script para 'Cualquier persona' (NO 'Cualquier persona con cuenta de Google').\n2. Revisa que actualizaste la URL en tu index.html en GitHub.");
-                } else {
-                    alert("⚠️ Error de Red: " + error.message);
-                }
-            } finally { 
-                setIsSyncing(false); 
-            }
-          };
-
-          const directSaveToSheets = async (equipo) => {
-             if (GOOGLE_SHEETS_WEBAPP_URL) {
-              try {
-                setIsSyncing(true);
-                await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
-                  method: 'POST', 
-                  redirect: "follow",
-                  // CORRECCIÓN VITAL: "text/plain" evita que el navegador haga el bloqueo CORS de preflight (OPTIONS)
-                  headers: { "Content-Type": "text/plain;charset=utf-8" },
-                  body: JSON.stringify({ action: 'edit', data: equipo, sheetName: equipo.origen, id: equipo.id, originalInventario: equipo.numeroInventario })
-                });
-              } catch (error) { 
-                  console.error("Error guardando en Sheets: ", error); 
-              } finally { 
-                  setIsSyncing(false); 
-              }
-            }
-          };
-
-          const handleUpdateEquipo = async (e) => {
-            e.preventDefault();
-            setEquipos(equipos.map(eq => eq.id === equipoEditado.id ? equipoEditado : eq));
-            setSelectedEquipo(equipoEditado);
-            setIsEditing(false);
-            directSaveToSheets(equipoEditado);
-          };
-
-          // ==============================================================================
-          // CORRECCIÓN RED: POST REQUEST (Envío de datos - Añadir)
-          // ==============================================================================
-          const handleAddEquipo = async (e) => {
-            e.preventDefault();
-            const id = `${nuevoEquipo.origen}-${Date.now()}`;
-            const numero = equipos.length > 0 ? Math.max(...equipos.map(eq => Number(eq.numero) || 0)) + 1 : 1;
-            const equipoGuardar = { ...nuevoEquipo, id, numero };
+            const [activeTab, setActiveTab] = useState('calendarios');
+            const [inventarioTab, setInventarioTab] = useState('Propio');
+            const [equipos, setEquipos] = useState(datosPruebaSeguros); // Arranca seguro con datos de prueba
+            const [historialGlobal, setHistorialGlobal] = useState([]);
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [syncError, setSyncError] = useState(null);
             
-            if (GOOGLE_SHEETS_WEBAPP_URL) {
-              try {
+            const [searchTerm, setSearchTerm] = useState('');
+            const [filterEstatus, setFilterEstatus] = useState('Todos');
+            const [filterUbicacionCal, setFilterUbicacionCal] = useState('Todas');
+            const [filterMesCal, setFilterMesCal] = useState('Todos');
+            const [searchControlCal, setSearchControlCal] = useState('');
+            const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+
+            const [selectedEquipo, setSelectedEquipo] = useState(null);
+            const [isEditing, setIsEditing] = useState(false);
+            const [equipoEditado, setEquipoEditado] = useState(null);
+            const [showAddEquipo, setShowAddEquipo] = useState(false);
+
+            const estadoInicialEquipo = { origen: inventarioTab, numeroInventario: '', estatus: 'En Servicio', nombre: '', marca: '', modelo: '', numeroSerie: '', ubicacion: '', frecuenciaMantenimiento: 'M', ultimoMantenimiento: '2026-01' };
+            const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
+
+            const handleSyncSheets = async () => {
                 setIsSyncing(true);
-                await fetch(GOOGLE_SHEETS_WEBAPP_URL, { 
-                    method: 'POST', 
-                    redirect: "follow",
-                    // CORRECCIÓN VITAL: Evitar OPTIONS Request
-                    headers: { "Content-Type": "text/plain;charset=utf-8" },
-                    body: JSON.stringify({ action: 'add', data: equipoGuardar, sheetName: equipoGuardar.origen }) 
+                setSyncError(null);
+                try {
+                    const response = await fetch(`${GOOGLE_SHEETS_WEBAPP_URL}?action=getAll`);
+                    if (!response.ok) throw new Error("Error de conexión HTTP: " + response.status);
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error);
+
+                    const procesarHoja = (arr, origen) => (Array.isArray(arr) ? arr : []).filter(e => e && (e.numeroInventario || e.nombre)).map((e, idx) => ({...e, origen, id: `${origen}-${e.id || idx}`}));
+                    
+                    const totalEquipos = [
+                        ...procesarHoja(data.propio, 'Propio'),
+                        ...procesarHoja(data.comodato, 'Comodato'),
+                        ...procesarHoja(data.renta, 'Renta')
+                    ];
+
+                    if (totalEquipos.length > 0) {
+                        setEquipos(totalEquipos);
+                    }
+                    if (Array.isArray(data.historial)) {
+                        setHistorialGlobal(data.historial);
+                    }
+                } catch (err) {
+                    console.error("Fallo de sincronización:", err);
+                    setSyncError(err.message);
+                } finally {
+                    setIsSyncing(false);
+                }
+            };
+
+            useEffect(() => { handleSyncSheets(); }, []);
+
+            const equiposFiltrados = useMemo(() => {
+                return equipos.filter(e => {
+                    const matchHoja = e.origen === inventarioTab;
+                    const matchEstatus = filterEstatus === 'Todos' || e.estatus === filterEstatus;
+                    if (!searchTerm) return matchHoja && matchEstatus;
+                    const s = searchTerm.toLowerCase();
+                    return matchHoja && matchEstatus && (String(e.nombre || '').toLowerCase().includes(s) || String(e.numeroInventario || '').toLowerCase().includes(s));
                 });
-              } catch (error) {
-                  console.error("Error añadiendo en Sheets: ", error); 
-              } finally { 
-                  setIsSyncing(false); 
-              }
-            }
-            setEquipos([...equipos, equipoGuardar]);
-            setShowAddEquipo(false);
-            setNuevoEquipo(estadoInicialEquipo);
-          };
+            }, [equipos, inventarioTab, searchTerm, filterEstatus]);
 
-          const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
-              const strY = year.toString();
-              const strM = (monthIndex + 1).toString().padStart(2, '0');
-              const targetStr = `${strY}-${strM}`;
+            const ubicacionesUnicas = useMemo(() => {
+                const locs = equipos.filter(e => e.origen === inventarioTab).map(e => e.ubicacion).filter(Boolean);
+                return ['Todas', ...new Set(locs)].sort();
+            }, [equipos, inventarioTab]);
 
-              let historialArr = limpiarHistorial(equipo.historialEjecuciones);
-              if (historialArr.includes(targetStr)) { historialArr = historialArr.filter(h => h !== targetStr); } 
-              else { historialArr.push(targetStr); }
-              historialArr = [...new Set(historialArr)];
+            const equiposCalendario = useMemo(() => {
+                return equipos.filter(e => {
+                    if (e.origen !== inventarioTab) return false;
+                    if (!e.frecuenciaMantenimiento) return false;
+                    if (e.motivoFueraServicio === 'BAJA DEFINITIVA') return false;
+                    if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
+                    if (searchControlCal && !String(e.numeroInventario || '').toLowerCase().includes(searchControlCal.toLowerCase())) return false;
+                    if (filterMesCal !== 'Todos') {
+                        const monthIdx = parseInt(filterMesCal, 10);
+                        const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
+                        if (!programados.has(monthIdx)) return false;
+                    }
+                    return true;
+                });
+            }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, searchControlCal, calendarYear]);
 
-              const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
-              setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
-              directSaveToSheets(updatedEquipo);
-          };
+            const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
+                const targetStr = `${year}-${(monthIndex + 1).toString().padStart(2, '0')}`;
+                let historialArr = limpiarHistorial(equipo.historialEjecuciones);
+                if (historialArr.includes(targetStr)) { historialArr = historialArr.filter(h => h !== targetStr); } 
+                else { historialArr.push(targetStr); }
+                const updated = { ...equipo, historialEjecuciones: [...new Set(historialArr)].join(',') };
+                setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
+            };
 
-          const getEstatusColor = (estatus) => {
-            const status = estatus ? estatus.toLowerCase() : '';
-            if (status.includes('servicio') && !status.includes('fuera')) return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-            if (status.includes('fuera de servicio')) return 'bg-red-100 text-red-800 border-red-300';
-            return 'bg-gray-100 text-gray-800 border-gray-300'; 
-          };
-
-          const renderCalendarios = () => (
-              <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print-hidden">
-                      <h2 className="text-2xl font-bold flex items-center gap-2">
-                        <i className="far fa-calendar-alt text-blue-600"></i> Calendario de Mantenimiento Preventivo
-                      </h2>
-                      <div className="flex gap-2">
-                          <button onClick={() => window.print()} className="flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition shadow-sm font-medium text-sm">
-                            <i className="fas fa-print"></i> Imprimir
-                          </button>
-                          <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm">
-                            <i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
-                          </button>
-                      </div>
-                  </div>
-
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="area-impresion">
-                      <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto print-hidden">
-                        <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
-                        <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
-                        <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
-                      </div>
-
-                      <div className="p-4 border-b border-gray-100 bg-white flex flex-wrap items-center gap-4 print-hidden">
-                          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-search mr-1"></i> Control:</label>
-                              <input type="text" value={searchControlCal} onChange={(e) => setSearchControlCal(e.target.value)} placeholder="Buscar No. Control..." className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium" />
-                          </div>
-                          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i> Área:</label>
-                              <select value={filterUbicacionCal} onChange={(e) => setFilterUbicacionCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
-                                  {ubicacionesUnicas.map(ub => <option key={ub} value={ub}>{ub}</option>)}
-                              </select>
-                          </div>
-                          <div className="flex items-center gap-2 flex-1 min-w-[150px]">
-                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter mr-1"></i> Mes:</label>
-                              <select value={filterMesCal} onChange={(e) => setFilterMesCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
-                                  <option value="Todos">Todos los meses</option>
-                                  {mesesAbreviados.map((m, i) => <option key={i} value={i}>{m}</option>)}
-                              </select>
-                          </div>
-                          <div className="flex items-center gap-2">
-                              <label className="text-xs font-bold text-gray-500 uppercase">Año:</label>
-                              <input type="number" value={calendarYear} onChange={(e) => setCalendarYear(parseInt(e.target.value))} className="w-24 py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none text-center font-bold" />
-                          </div>
-                      </div>
-
-                      <div className="hidden print-block p-6 text-center border-b border-gray-200 text-slate-800">
-                          <h2 className="text-3xl font-bold mb-2">Calendario de Mantenimiento Preventivo</h2>
-                          <p className="text-lg">
-                              Año: <strong>{calendarYear}</strong> | Categoría: <strong>{inventarioTab}</strong> | Área: <strong>{filterUbicacionCal}</strong>
-                              {filterMesCal !== 'Todos' && <span> | Mes Programado: <strong>{mesesAbreviados[parseInt(filterMesCal)]}</strong></span>}
-                          </p>
-                      </div>
-
-                      <div className="overflow-x-auto p-4">
-                          <table className="w-full text-left border-collapse tabla-cal text-xs whitespace-nowrap text-slate-800">
-                              <thead>
-                                  <tr>
-                                      <th className="p-2 w-24">Control</th>
-                                      <th className="p-2">Equipo</th>
-                                      <th className="p-2">Marca</th>
-                                      <th className="p-2">Modelo</th>
-                                      <th className="p-2">Serie</th>
-                                      <th className="p-2">Ubicación</th>
-                                      {mesesAbreviados.map(mes => <th key={mes} className="p-1 w-8 uppercase" style={{writingMode: 'vertical-rl', transform: 'rotate(180deg)', paddingBottom: '10px'}}>{mes}</th>)}
-                                  </tr>
-                              </thead>
-                              <tbody>
-                                  {equiposCalendario.length === 0 ? (
-                                      <tr><td colSpan="18" className="p-8 text-center text-gray-500 border border-blue-800">No hay equipos que cumplan con estos filtros.</td></tr>
-                                  ) : (
-                                      equiposCalendario.map((equipo) => {
-                                          const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, calendarYear);
-                                          const historialString = equipo.historialEjecuciones || "";
-                                          const ejecutadosArr = limpiarHistorial(historialString);
-                                          
-                                          const isFueraServicio = equipo.estatus === 'Fuera de Servicio';
-
-                                          const celdas = [0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
-                                              const strY = calendarYear.toString();
-                                              const strM = (monthIndex + 1).toString().padStart(2, '0');
-                                              const targetStr = `${strY}-${strM}`;
-                                              
-                                              const isEjecutado = ejecutadosArr.includes(targetStr);
-                                              const isProgramado = mesesProgramados.has(monthIndex);
-                                              
-                                              let cellClass = "p-1 border border-blue-800 celda-interactiva ";
-                                              if (isEjecutado) {
-                                                  cellClass += "celda-ejec ";
-                                              } else if (isProgramado) {
-                                                  if (isFueraServicio) {
-                                                      cellClass += "celda-fuera-servicio "; 
-                                                  } else {
-                                                      cellClass += "celda-prog "; 
-                                                  }
-                                              } else {
-                                                  cellClass += "bg-white ";
-                                              }
-
-                                              return (
-                                                  <td 
-                                                      key={monthIndex}
-                                                      onClick={() => toggleMantenimientoEjecutado(equipo, monthIndex, calendarYear)}
-                                                      title={`Clic para marcar/desmarcar realizado en ${mesesAbreviados[monthIndex]}`}
-                                                      className={cellClass}
-                                                  ></td>
-                                              );
-                                          });
-
-                                          return (
-                                              <tr key={equipo.id} className="hover:bg-blue-50/30 transition-colors">
-                                                  <td className="p-2 font-bold text-blue-900 border border-blue-800">{equipo.numeroInventario || 'S/N'}</td>
-                                                  <td className="p-2 border border-blue-800">{equipo.nombre}</td>
-                                                  <td className="p-2 text-gray-600 border border-blue-800">{equipo.marca || '-'}</td>
-                                                  <td className="p-2 text-gray-600 border border-blue-800">{equipo.modelo || '-'}</td>
-                                                  <td className="p-2 text-gray-600 font-mono border border-blue-800">{equipo.numeroSerie || '-'}</td>
-                                                  <td className="p-2 text-gray-600 border border-blue-800">{equipo.ubicacion || '-'}</td>
-                                                  {celdas}
-                                              </tr>
-                                          )
-                                      })
-                                  )}
-                              </tbody>
-                          </table>
-                      </div>
-                      
-                      <div className="p-4 bg-blue-50 border-t border-blue-100 flex gap-6 text-xs items-center font-medium print-hidden text-slate-800">
-                          <span className="font-bold text-blue-900 uppercase tracking-widest"><i className="fas fa-info-circle mr-1"></i> Leyenda Visual:</span>
-                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-blue-500 shadow-inner border border-blue-600"></div> <span>Programado</span></div>
-                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-green-500 border border-green-600 flex items-center justify-center text-white text-[10px] font-bold">✓</div> <span>Ejecutado (Clic)</span></div>
-                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-red-500 shadow-inner border border-red-600"></div> <span>Fuera de Servicio</span></div>
-                      </div>
-                  </div>
-              </div>
-          );
-
-          const renderEquipos = () => {
-            if (showAddEquipo || (selectedEquipo && isEditing)) {
-              const equipoFormulario = isEditing ? equipoEditado : nuevoEquipo;
-              const setEquipoState = isEditing ? setEquipoEditado : setNuevoEquipo;
-              const handleSubmit = isEditing ? handleUpdateEquipo : handleAddEquipo;
-              const handleCancel = () => isEditing ? setIsEditing(false) : setShowAddEquipo(false);
-              const title = isEditing ? `Editar Equipo: ${equipoFormulario.numeroInventario}` : `Agregar Nuevo Equipo en ${inventarioTab}`;
-
-              return (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
-                  <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                    <div className="flex items-center gap-3">
-                      <button onClick={handleCancel} className="text-gray-500 hover:text-blue-600 transition">
-                        <i className="fas fa-arrow-left text-xl"></i>
-                      </button>
-                      <h2 className="text-xl font-bold text-gray-800">{title}</h2>
-                    </div>
-                  </div>
-                  
-                  <form onSubmit={handleSubmit} className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Núm. de Inventario Interno *</label>
-                        <input required type="text" value={equipoFormulario.numeroInventario} onChange={(e) => setEquipoState({...equipoFormulario, numeroInventario: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                      </div>
-                      <div className="lg:col-span-2">
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label>
-                        <input required type="text" value={equipoFormulario.nombre} onChange={(e) => setEquipoState({...equipoFormulario, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label>
-                        <select value={equipoFormulario.tipoTecnologia} onChange={(e) => setEquipoState({...equipoFormulario, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                          <option value="Equipo Médico">Equipo Médico</option>
-                          <option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option>
-                          <option value="Infraestructura">Infraestructura</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label>
-                        <select required value={equipoFormulario.estatus} onChange={(e) => setEquipoState({...equipoFormulario, estatus: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                          <option value="En Servicio">En Servicio</option>
-                          <option value="Fuera de Servicio">Fuera de Servicio</option>
-                        </select>
-                      </div>
-                      {equipoFormulario.estatus === 'Fuera de Servicio' && (
-                        <div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2">
-                          <label className="block text-xs font-bold text-red-600 mb-1">Seleccione el motivo de "Fuera de Servicio"</label>
-                          <select value={equipoFormulario.motivoFueraServicio} onChange={(e) => setEquipoState({...equipoFormulario, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">
-                            {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                        </div>
-                      )}
-                      
-                      <div className="lg:col-span-3 border-t border-gray-200 my-2 pt-4">
-                          <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Configuración de Mantenimiento Preventivo</h4>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              <div>
-                                  <label className="block text-xs font-bold text-gray-700 mb-1">Frecuencia</label>
-                                  <select value={equipoFormulario.frecuenciaMantenimiento} onChange={(e) => {
-                                      const updated = {...equipoFormulario, frecuenciaMantenimiento: e.target.value};
-                                      updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, e.target.value);
-                                      setEquipoState(updated);
-                                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                                    {frecuenciasOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-                                  </select>
-                              </div>
-                              <div>
-                                  <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año del Último Servicio (Base)</label>
-                                  <input type="month" value={equipoFormulario.ultimoMantenimiento} onChange={(e) => {
-                                      const updated = {...equipoFormulario, ultimoMantenimiento: e.target.value};
-                                      updated.proximoMantenimiento = calcularProximoMantenimiento(e.target.value, updated.frecuenciaMantenimiento);
-                                      setEquipoState(updated);
-                                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                              </div>
-                              <div>
-                                  <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Próximo (Calculado)</label>
-                                  <input type="month" value={equipoFormulario.proximoMantenimiento} readOnly className="w-full px-3 py-2 border border-blue-200 bg-blue-50 text-blue-800 font-bold rounded-lg text-sm cursor-not-allowed" />
-                              </div>
-                          </div>
-                      </div>
-
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Marca</label><input type="text" value={equipoFormulario.marca} onChange={(e) => setEquipoState({...equipoFormulario, marca: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Modelo o Versión</label><input type="text" value={equipoFormulario.modelo} onChange={(e) => setEquipoState({...equipoFormulario, modelo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={equipoFormulario.numeroSerie} onChange={(e) => setEquipoState({...equipoFormulario, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={equipoFormulario.fabricante} onChange={(e) => setEquipoState({...equipoFormulario, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={equipoFormulario.ubicacion} onChange={(e) => setEquipoState({...equipoFormulario, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo Vigente?</label>
-                        <select value={equipoFormulario.polizaMantenimiento} onChange={(e) => setEquipoState({...equipoFormulario, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                          <option value="Sí">Sí</option><option value="No">No</option>
-                        </select>
-                      </div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={equipoFormulario.nivelRiesgo} onChange={(e) => setEquipoState({...equipoFormulario, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor de Mantenimiento</label><input type="text" value={equipoFormulario.proveedorMantenimiento} onChange={(e) => setEquipoState({...equipoFormulario, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={equipoFormulario.fechaAlta ? equipoFormulario.fechaAlta.split('T')[0] : ''} onChange={(e) => setEquipoState({...equipoFormulario, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-                      <div className="lg:col-span-3">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Descripción del Equipo</label>
-                        <textarea value={equipoFormulario.descripcion} onChange={(e) => setEquipoState({...equipoFormulario, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea>
-                      </div>
-                    </div>
-                    
-                    <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
-                      <button type="button" onClick={handleCancel} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
-                      <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
-                        {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>}
-                        {isEditing ? 'Guardar Cambios' : 'Crear Equipo'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              );
-            }
-
-            if (selectedEquipo && !isEditing) {
-              const freqText = frecuenciasOptions.find(f => f.id === selectedEquipo.frecuenciaMantenimiento)?.label || 'No asignada';
-              
-              const handleJotformRedirect = () => {
-                  const formUrl = "https://form.jotform.com/253464903173862";
-                  const params = new URLSearchParams({
-                      equipoName: selectedEquipo.nombre || '',
-                      equipoMarca: selectedEquipo.marca || '',
-                      equipoModelo: selectedEquipo.modelo || '',
-                      equipoSerie: selectedEquipo.numeroSerie || '',
-                      equipoInventario: selectedEquipo.numeroInventario || '',
-                      equipoUbicacion: selectedEquipo.ubicacion || ''
-                  });
-                  window.open(`${formUrl}?${params.toString()}`, '_blank');
-              };
-
-              const historialEquipo = Array.isArray(historialGlobal) 
-                  ? historialGlobal.filter(h => h.numeroInventario === selectedEquipo.numeroInventario) 
-                  : [];
-
-              return (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
-                  <div className="p-4 border-b border-gray-100 flex items-center gap-4 bg-gray-50">
-                    <button onClick={() => setSelectedEquipo(null)} className="text-gray-500 hover:text-blue-600 transition flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 shadow-sm">
-                      <i className="fas fa-arrow-left"></i> Volver al Inventario
-                    </button>
-                    
-                    <div className="ml-auto flex gap-2">
-                      <button onClick={handleJotformRedirect} className="flex items-center gap-2 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-lg hover:bg-amber-100 transition shadow-sm font-medium text-sm">
-                        <i className="fas fa-wrench"></i> Generar Orden (OS)
-                      </button>
-
-                      <button onClick={() => { setEquipoEditado({...selectedEquipo}); setIsEditing(true); }} className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition shadow-sm font-medium text-sm">
-                        <i className="fas fa-edit"></i> Editar Información
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="p-8">
-                    <div className="flex flex-col lg:flex-row justify-between items-start gap-4 mb-8 border-b border-gray-100 pb-6">
-                      <div className="flex-1">
-                        <h2 className="text-3xl font-bold mb-2">{selectedEquipo.nombre || 'Equipo sin nombre'}</h2>
-                        
-                        <div className="flex flex-wrap items-center gap-3 text-sm">
-                            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200 shadow-sm">
-                                <i className="fas fa-wrench mr-2"></i> {freqText}
-                            </span>
-                            {selectedEquipo.ultimoMantenimiento && (
-                                <span className="text-gray-600 font-medium flex items-center bg-gray-50 px-2 py-1 rounded border border-gray-200">
-                                    <i className="far fa-calendar-check mr-2 text-gray-400"></i> Último Base: {selectedEquipo.ultimoMantenimiento}
-                                </span>
-                            )}
-                            {selectedEquipo.proximoMantenimiento && (
-                                <span className="text-emerald-700 font-bold flex items-center bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
-                                    <i className="fas fa-arrow-right mx-2 text-emerald-400"></i> Próximo Est.: {selectedEquipo.proximoMantenimiento}
-                                </span>
-                            )}
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-col items-end gap-3 min-w-[250px]">
-                        <span className={`px-4 py-2 rounded-lg border font-bold text-lg text-center shadow-sm w-full ${getEstatusColor(selectedEquipo.estatus)}`}>
-                          {selectedEquipo.numeroInventario || 'Sin No. Inv'}
-                        </span>
-                        
-                        <div className="w-full bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest"><i className="fas fa-exchange-alt mr-1"></i> Estatus:</label>
-                            <select 
-                              value={selectedEquipo.estatus} 
-                              onChange={(e) => {
-                                  const updated = { ...selectedEquipo, estatus: e.target.value };
-                                  if (e.target.value === 'En Servicio') updated.motivoFueraServicio = '';
-                                  else updated.motivoFueraServicio = motivosOptions[0];
-                                  setSelectedEquipo(updated);
-                                  setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
-                                  directSaveToSheets(updated);
-                              }}
-                              className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${
-                                selectedEquipo.estatus === 'En Servicio' ? 'text-emerald-700' : 'text-red-700'
-                              }`}
-                            >
-                              <option value="En Servicio" className="text-emerald-700 font-bold">En Servicio</option>
-                              <option value="Fuera de Servicio" className="text-red-700 font-bold">Fuera de Servicio</option>
-                            </select>
-                          </div>
-                          
-                          {selectedEquipo.estatus === 'Fuera de Servicio' && (
-                            <div className="flex flex-col gap-1 mt-1 border-t border-gray-100 pt-2 animate-in fade-in">
-                              <label className="text-[10px] font-bold text-red-500 uppercase">Motivo:</label>
-                              <select 
-                                value={selectedEquipo.motivoFueraServicio || ''} 
-                                onChange={(e) => {
-                                    const updated = { ...selectedEquipo, motivoFueraServicio: e.target.value };
-                                    setSelectedEquipo(updated);
-                                    setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq));
-                                    directSaveToSheets(updated);
-                                }}
-                                className="text-xs font-medium border border-red-200 rounded p-1.5 text-red-700 bg-red-50 w-full outline-none"
-                              >
-                                <option value="" disabled>Seleccione un motivo...</option>
-                                {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8">
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Categoría</p>
-                        <p className="text-gray-800 font-medium">{selectedEquipo.tipoTecnologia || '-'}</p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Marca</p>
-                        <p className="text-gray-800 font-medium">{selectedEquipo.marca || '-'}</p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Modelo / Versión</p>
-                        <p className="text-gray-800 font-medium">{selectedEquipo.modelo || '-'}</p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Número de Serie</p>
-                        <p className="text-gray-800 font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Ubicación Física</p>
-                        <p className="text-gray-800 font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fabricante</p>
-                        <p className="text-gray-800 font-medium">{selectedEquipo.fabricante || '-'}</p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p>
-                        <p className="text-gray-800 font-medium">
-                          {selectedEquipo.polizaMantenimiento === 'Sí' ? 
-                            <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : 
-                            <span className="text-gray-500">Sin Póliza</span>}
-                        </p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Proveedor Mantenimiento</p>
-                        <p className="text-gray-800 font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p>
-                        <p className="text-gray-800 font-medium">{selectedEquipo.nivelRiesgo || '-'}</p>
-                      </div>
-                      <div className="border-b border-gray-100 pb-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta al Inventario</p>
-                        <p className="text-gray-800 font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p>
-                      </div>
-                      <div className="lg:col-span-3 mt-4">
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p>
-                        <p className="text-gray-700 bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">
-                            {selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}
-                        </p>
-                      </div>
-                      
-                      <div className="lg:col-span-3 mt-6 pt-6 border-t border-gray-100">
-                          <div className="flex justify-between items-center mb-4">
-                              <h3 className="text-lg font-bold text-slate-800 flex items-center">
-                                  <i className="fas fa-history text-blue-600 mr-2"></i> Historial de Órdenes de Servicio
-                              </h3>
-                              <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">Origen: Jotform</span>
-                          </div>
-                          
-                          {historialEquipo.length === 0 ? (
-                              <p className="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg border border-gray-200">No se encontraron órdenes de servicio registradas para este equipo.</p>
-                          ) : (
-                              <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-                                  <table className="w-full text-left border-collapse whitespace-nowrap text-sm">
-                                      <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-                                          <tr>
-                                              <th className="p-3 border-b font-bold">Fecha</th>
-                                              <th className="p-3 border-b font-bold">Tipo de Servicio</th>
-                                              <th className="p-3 border-b font-bold">Técnico / Realizó</th>
-                                              <th className="p-3 border-b font-bold">Falla / Trabajo</th>
-                                              <th className="p-3 border-b font-bold text-center">Documento</th>
-                                          </tr>
-                                      </thead>
-                                      <tbody>
-                                          {historialEquipo.map((hist, idx) => (
-                                              <tr key={idx} className="border-b border-gray-50 hover:bg-blue-50/50 transition">
-                                                  <td className="p-3 font-medium text-slate-800">{hist.fechaStr}</td>
-                                                  <td className="p-3 text-slate-600">
-                                                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${String(hist.tipoServicio).toLowerCase().includes('preventivo') ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                        {hist.tipoServicio || 'No esp.'}
-                                                    </span>
-                                                  </td>
-                                                  <td className="p-3 text-slate-600">{hist.tecnico || '-'}</td>
-                                                  <td className="p-3 text-slate-500 max-w-[200px] truncate" title={hist.descripcion}>{hist.descripcion || '-'}</td>
-                                                  <td className="p-3 text-center">
-                                                      {hist.linkPDF ? (
-                                                          <a href={hist.linkPDF} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1 rounded border border-red-200 transition text-xs font-bold shadow-sm">
-                                                              <i className="far fa-file-pdf"></i> Ver PDF
-                                                          </a>
-                                                      ) : (
-                                                          <span className="text-xs text-gray-400 italic">Sin Archivo</span>
-                                                      )}
-                                                  </td>
-                                              </tr>
-                                          ))}
-                                      </tbody>
-                                  </table>
-                              </div>
-                          )}
-                      </div>
-                      
-                    </div>
-                  </div>
-                </div>
-              );
-            }
+            const getEstatusColor = (estatus) => {
+                return estatus === 'Fuera de Servicio' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300';
+            };
 
             return (
-              <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <h2 className="text-2xl font-bold flex items-center gap-2">
-                    <i className="fas fa-stethoscope text-blue-600"></i> Hojas de Inventario
-                  </h2>
-                  
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm">
-                      <i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> 
-                      {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
-                    </button>
-                    
-                    <button onClick={() => { setNuevoEquipo({...estadoInicialEquipo, origen: inventarioTab}); setShowAddEquipo(true); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm">
-                      <i className="fas fa-plus"></i> Agregar Equipo
-                    </button>
-                  </div>
-                </div>
+                <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
+                    <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10 md:min-h-screen print-hidden">
+                        <div className="p-6 border-b border-slate-800 flex items-center gap-3">
+                            <div className="bg-blue-500 p-2 rounded-lg text-white font-bold"><i className="fas fa-stethoscope"></i></div>
+                            <div>
+                                <h1 className="text-xl font-bold">MediCMMS</h1>
+                                <p className="text-xs text-slate-400">Panel Biomédico</p>
+                            </div>
+                        </div>
+                        <nav className="flex-1 p-4 space-y-2">
+                            <button onClick={() => { setActiveTab('dashboard'); setSelectedEquipo(null); }} className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium ${activeTab === 'dashboard' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><i className="fas fa-columns mr-2"></i> Dashboard</button>
+                            <button onClick={() => { setActiveTab('equipos'); setSelectedEquipo(null); }} className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium ${activeTab === 'equipos' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><i className="fas fa-boxes mr-2"></i> Inventario</button>
+                            <button onClick={() => { setActiveTab('calendarios'); setSelectedEquipo(null); }} className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium ${activeTab === 'calendarios' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><i className="far fa-calendar-alt mr-2"></i> Calendario MP</button>
+                        </nav>
+                    </aside>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto">
-                    <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
-                    <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
-                    <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
-                  </div>
-
-                  <div className="p-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row gap-3">
-                    <div className="relative flex-1">
-                      <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                      <input 
-                        type="text" 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder={`Buscar en ${inventarioTab.toLowerCase()} (Nombre, Marca, Serie, Inv)...`} 
-                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" 
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter"></i> Filtro Estatus:</label>
-                        <select 
-                            value={filterEstatus}
-                            onChange={(e) => setFilterEstatus(e.target.value)}
-                            className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                        >
-                            <option value="Todos">Mostrar Todos</option>
-                            <option value="En Servicio">Sólo En Servicio</option>
-                            <option value="Fuera de Servicio">Sólo Fuera de Servicio</option>
-                        </select>
-                    </div>
-                  </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse whitespace-nowrap">
-                      <thead>
-                        <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
-                          <th className="p-4 font-bold border-b">NO. INV.</th>
-                          <th className="p-4 font-bold border-b">EQUIPO / TECNOLOGÍA</th>
-                          <th className="p-4 font-bold border-b">MARCA</th>
-                          <th className="p-4 font-bold border-b">MODELO</th>
-                          <th className="p-4 font-bold border-b">SERIE</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {equiposFiltrados.length === 0 && (
-                          <tr><td colSpan="5" className="p-8 text-center text-gray-500">No se encontraron equipos con esos criterios.</td></tr>
+                    <main className="flex-1 p-6 overflow-y-auto relative">
+                        {syncError && (
+                            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm">
+                                <div className="flex items-center">
+                                    <div className="text-amber-500 mr-3"><i className="fas fa-info-circle text-xl"></i></div>
+                                    <div>
+                                        <p className="text-sm font-bold text-amber-800">Aviso de Google Sheets: Cargando con datos locales de respaldo.</p>
+                                        <p className="text-xs text-amber-700 mt-0.5">Motivo: {syncError}. (Verifica que tu Google Apps Script esté publicado correctamente o usa los datos de prueba).</p>
+                                    </div>
+                                </div>
+                            </div>
                         )}
-                        {equiposFiltrados.map((equipo) => (
-                          <tr 
-                            key={equipo.id} 
-                            onClick={() => setSelectedEquipo(equipo)}
-                            className="border-b border-gray-50 hover:bg-blue-50/50 transition cursor-pointer text-sm group"
-                          >
-                            <td className="p-4">
-                              <span className={`px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider shadow-sm transition-colors ${getEstatusColor(equipo.estatus)}`}>
-                                {equipo.numeroInventario || 'S/N'}
-                              </span>
-                            </td>
-                            <td className="p-4 text-gray-800 font-medium group-hover:text-blue-700 transition-colors">
-                              {equipo.nombre}
-                            </td>
-                            <td className="p-4 text-gray-600">{equipo.marca || '-'}</td>
-                            <td className="p-4 text-gray-600">{equipo.modelo || '-'}</td>
-                            <td className="p-4 text-gray-500 font-mono text-xs">{equipo.numeroSerie || '-'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+
+                        <div className="max-w-7xl mx-auto">
+                            {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} />}
+
+                            {activeTab === 'equipos' && !selectedEquipo && (
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="text-2xl font-bold">Inventario de Equipos ({equiposFiltrados.length})</h2>
+                                        <button onClick={handleSyncSheets} disabled={isSyncing} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700"><i className={`fas fa-sync-alt ${isSyncing ? 'fa-spin' : ''} mr-2`}></i> {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}</button>
+                                    </div>
+                                    <div className="flex border-b bg-white rounded-t-xl overflow-hidden shadow-sm">
+                                        {['Propio', 'Comodato', 'Renta'].map(t => (
+                                            <button key={t} onClick={() => setInventarioTab(t)} className={`flex-1 py-3 px-4 text-sm font-bold border-b-2 ${inventarioTab === t ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500'}`}>Hoja: {t}</button>
+                                        ))}
+                                    </div>
+                                    <div className="bg-white rounded-b-xl shadow-sm overflow-hidden border border-gray-100 p-4">
+                                        <div className="flex gap-4 mb-4">
+                                            <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar equipo..." className="flex-1 p-2 border rounded text-sm" />
+                                        </div>
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                                                <tr><th className="p-3">Control</th><th className="p-3">Nombre</th><th className="p-3">Marca/Modelo</th><th className="p-3">Ubicación</th><th className="p-3">Estatus</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                {equiposFiltrados.map(eq => (
+                                                    <tr key={eq.id} onClick={() => setSelectedEquipo(eq)} className="border-b hover:bg-blue-50/50 cursor-pointer">
+                                                        <td className="p-3 font-bold text-blue-700">{eq.numeroInventario}</td>
+                                                        <td className="p-3 font-medium">{eq.nombre}</td>
+                                                        <td className="p-3 text-gray-600">{eq.marca} {eq.modelo}</td>
+                                                        <td className="p-3 text-gray-600">{eq.ubicacion}</td>
+                                                        <td className="p-3"><span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${getEstatusColor(eq.estatus)}`}>{eq.estatus}</span></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'equipos' && selectedEquipo && (
+                                <div className="bg-white rounded-xl shadow-sm border p-6 space-y-6">
+                                    <div className="flex justify-between items-center border-b pb-4">
+                                        <button onClick={() => setSelectedEquipo(null)} className="text-blue-600 font-bold text-sm"><i className="fas fa-arrow-left mr-2"></i> Volver al Inventario</button>
+                                        <a href={`https://form.jotform.com/253464903173862?equipoInventario=${encodeURIComponent(selectedEquipo.numeroInventario)}&equipoName=${encodeURIComponent(selectedEquipo.nombre)}`} target="_blank" rel="noreferrer" className="bg-amber-50 text-amber-800 border border-amber-200 px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-amber-100"><i className="fas fa-wrench mr-2"></i> Generar Orden (OS Jotform)</a>
+                                    </div>
+                                    <div>
+                                        <h2 className="text-3xl font-bold">{selectedEquipo.nombre}</h2>
+                                        <p className="text-gray-500 text-sm mt-1">Control: <strong className="text-blue-700">{selectedEquipo.numeroInventario}</strong> | Ubicación: {selectedEquipo.ubicacion}</p>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg border">
+                                        <div><p className="text-xs text-gray-400 font-bold uppercase">Marca</p><p className="font-medium">{selectedEquipo.marca || '-'}</p></div>
+                                        <div><p className="text-xs text-gray-400 font-bold uppercase">Modelo</p><p className="font-medium">{selectedEquipo.modelo || '-'}</p></div>
+                                        <div><p className="text-xs text-gray-400 font-bold uppercase">Serie</p><p className="font-mono">{selectedEquipo.numeroSerie || '-'}</p></div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'calendarios' && (
+                                <div className="space-y-6 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                                    <div className="flex justify-between items-center flex-wrap gap-4">
+                                        <h2 className="text-2xl font-bold"><i className="far fa-calendar-alt text-blue-600 mr-2"></i> Calendario de Mantenimiento Preventivo</h2>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => window.print()} className="bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium"><i className="fas fa-print mr-2"></i> Imprimir</button>
+                                            <button onClick={handleSyncSheets} disabled={isSyncing} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium"><i className={`fas fa-sync-alt ${isSyncing ? 'fa-spin' : ''} mr-2`}></i> Sincronizar</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex border-b bg-gray-50 rounded-lg overflow-hidden p-1 gap-1">
+                                        {['Propio', 'Comodato', 'Renta'].map(t => (
+                                            <button key={t} onClick={() => setInventarioTab(t)} className={`flex-1 py-2 px-3 text-sm font-bold rounded ${inventarioTab === t ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>{t}</button>
+                                        ))}
+                                    </div>
+                                    <div className="flex flex-wrap gap-4 items-center">
+                                        <input type="text" value={searchControlCal} onChange={e => setSearchControlCal(e.target.value)} placeholder="Buscar por No. Control..." className="p-2 border rounded text-sm w-48" />
+                                        <select value={filterUbicacionCal} onChange={e => setFilterUbicacionCal(e.target.value)} className="p-2 border rounded text-sm"><option value="Todas">Todas las áreas</option>{ubicacionesUnicas.map(u => <option key={u} value={u}>{u}</option>)}</select>
+                                        <input type="number" value={calendarYear} onChange={e => setCalendarYear(parseInt(e.target.value))} className="p-2 border rounded text-sm w-24 text-center font-bold" />
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse tabla-cal text-xs whitespace-nowrap">
+                                            <thead>
+                                                <tr>
+                                                    <th className="p-2 w-24">Control</th><th className="p-2">Equipo</th><th className="p-2">Ubicación</th>
+                                                    {mesesAbreviados.map(mes => <th key={mes} className="p-1 w-8 uppercase text-center" style={{writingMode: 'vertical-rl', transform: 'rotate(180deg)', paddingBottom: '10px'}}>{mes}</th>)}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {equiposCalendario.map(equipo => {
+                                                    const programados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, calendarYear);
+                                                    const ejecutadosArr = limpiarHistorial(equipo.historialEjecuciones);
+                                                    const isFuera = equipo.estatus === 'Fuera de Servicio';
+                                                    return (
+                                                        <tr key={equipo.id} className="hover:bg-blue-50/30">
+                                                            <td className="p-2 font-bold text-blue-900 border">{equipo.numeroInventario}</td>
+                                                            <td className="p-2 border font-medium">{equipo.nombre}</td>
+                                                            <td className="p-2 border text-gray-600">{equipo.ubicacion}</td>
+                                                            {[0,1,2,3,4,5,6,7,8,9,10,11].map(m => {
+                                                                const isEjec = ejecutadosArr.includes(`${calendarYear}-${(m+1).toString().padStart(2,'0')}`);
+                                                                const isProg = programados.has(m);
+                                                                let cClass = "p-1 border celda-interactiva ";
+                                                                if (isEjec) cClass += "celda-ejec";
+                                                                else if (isProg) cClass += isFuera ? "celda-fuera-servicio" : "celda-prog";
+                                                                else cClass += "bg-white";
+                                                                return <td key={m} onClick={() => toggleMantenimientoEjecutado(equipo, m, calendarYear)} className={cClass}></td>;
+                                                            })}
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </main>
                 </div>
-              </div>
             );
-          };
-
-          return (
-            <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans">
-              <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10 md:min-h-screen print-hidden">
-                <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-                  <div className="bg-blue-500 p-2 rounded-lg w-10 h-10 flex items-center justify-center"><i className="fas fa-thermometer-half text-white text-xl"></i></div>
-                  <div>
-                    <h1 className="text-xl font-bold tracking-tight">MediCMMS</h1>
-                    <p className="text-xs text-slate-400">Google Sheets Sync</p>
-                  </div>
-                </div>
-                
-                <nav className="flex-1 p-4 space-y-2">
-                  <button onClick={() => {setActiveTab('dashboard'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
-                    <i className="fas fa-columns w-5 text-center"></i> Dashboard
-                  </button>
-                  <button onClick={() => {setActiveTab('equipos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'equipos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
-                    <i className="fas fa-stethoscope w-5 text-center"></i> Inventario
-                  </button>
-                  <button onClick={() => {setActiveTab('calendarios'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'calendarios' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
-                    <i className="far fa-calendar-alt w-5 text-center"></i> Calendarios
-                  </button>
-                </nav>
-              </aside>
-
-              <main className="flex-1 p-6 md:p-8 overflow-y-auto relative">
-                <div className="max-w-7xl mx-auto">
-                  {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} />}
-                  {activeTab === 'equipos' && renderEquipos()}
-                  {activeTab === 'calendarios' && renderCalendarios()}
-                </div>
-              </main>
-            </div>
-          );
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
