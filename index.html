@@ -147,20 +147,25 @@
         const QR_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAFAAQAAAADl65gHAAADU0lEQVR42u1bS66jQAwsnkZ67Nw3IPc/VecGxY5ZeRa2u+mE33ZokFAgtBKlVHaVCzIorm0/eBb+5wuhtFdRVTsWCkXV9nL1wfF7Y4OjIShKiCoBUYqdElKudo8jsQAEErBwwQgQqcGRxsHKS9orDVJguooje+JjA+N6oShF38OQAOE8DC/JT3+sW4o6Znljc6Hk+YV5yvJ+eZvM8+vgq9N2q7gjjulwUQLwB4AoMBt0aeIMCDHLO2GAlKt985F7Cxa/+gPMwzAMLwBzgrwT7Ch65l+/+tT1DhNDZ2Kja/NqW7/RO47jMYxQTgyRIUQ5hYt0zQYwGY7cd0896nVb25WIdMsjhZzEZO5cTvl4X53hsoYrmDimFVMXn2eEEzGxuMeocLPiqrnOMzzouUb0m/Ixnc2FdZSxPYYZbY467o+pIkkAC52CLDRlzIVe2jYUxixD+HD4zNdXcgrlZCCKaobjBinMlKrXvMLyu+p1aoRgTG3DRK1l9zqIGrdG6cHFw8dtdeU6NyvxzsrzmL64I/qqa+4bqXviyI3fzZaPSqFHZCyJjwSgnkY+fDyZaQxFd9xSICWkzDRX/OOdcaxmkVtUZO2PnjXGGFPp6RR99NrxSrvzhxLCKSpZdKu6q86wRxx5OsN5f0SkO7Jqloz+aJg+fNx0e6nho4SD5KTV6njJZ9nKe7j3mXecZxiJT2rCcC4VCC0ao2WmXilPqHbXfLzQzaCWUAjFuCi5CDVreibNPMOjmebW/nG/IjUI6ZNglWgW//jo9YW8x/W6mQN1lfyI8rf0xxOGj/fEMV347SWyrbMLo0M6S7Xv/mgufLHELK2EJ5hTdcYKOn9GFKLZJbzV6x39Z4c5BbAYlkVPpDbJ8qgP8OHDO+RjGm0/UBz34cXwaA6RwRTzjRKyfM3Xaftjl3vzkQdzTX3ejChxON2Ie6d89LoFkfU0RZrrZZyF+NUM1Gd64pYNJK/4mACM0W63umS3zz/WiKfeK2S9NeOK88zXX6QZvZelFkchIBlN/pjxy22dSZ+nY284fuYUq8jR7yi4B48bYDjtj7y1fwRS9DLuaqyuHqbQHBJd/Xfc1j5NkG5d1+dJRdFrhlqHYpuljKd/Tr+aXdZ1bMPzn4puFv4DqpI0U2+dvBcAAAAASUVORK5CYII=';
 
         // ============================================================================
-        // ETIQUETA ZEBRA 50 x 30 mm @ 203 dpi (8 dots/mm)
+        // ETIQUETA ZEBRA 57 x 31 mm @ 300 dpi (12 dots/mm)
         // ----------------------------------------------------------------------------
-        // Tamaño nativo: 400 x 240 dots. Se renderiza a 4x (1600x960) para que
-        // el escalado del driver quede nítido y sin dientes de sierra.
-        // El QR es versión 5 (37x37 módulos); a 27 mm cada módulo mide ~5.8 dots,
-        // muy por encima del mínimo de 4 dots recomendado para lectura fiable.
+        // Tamaño nativo: 684 x 372 dots. Se renderiza a 2x para nitidez.
+        // El QR se fija en 24 mm (no ocupa todo el alto) para liberar ancho al
+        // texto: la zona de datos pasa de 18.8 mm a 29.4 mm.
+        // QR versión 5 (37x37 módulos) -> módulo de 0.65 mm = 7.8 dots @300dpi,
+        // casi el doble del mínimo de 4 dots recomendado por Zebra.
+        //
+        // NOTA: subir de 203 a 300 dpi da MÁS NITIDEZ, no más tamaño. El texto
+        // se agrandó explícitamente (~38%) en las constantes T_* de abajo.
         // ============================================================================
-        const ETQ_ANCHO_MM = 50;
-        const ETQ_ALTO_MM  = 30;
-        const ETQ_DPMM     = 8;    // 203 dpi
-        const ETQ_ESCALA   = 4;    // supermuestreo
+        const ETQ_ANCHO_MM = 57;
+        const ETQ_ALTO_MM  = 31;
+        const ETQ_DPMM     = 12;   // 300 dpi
+        const ETQ_ESCALA   = 2;    // supermuestreo
+        const ETQ_QR_MM    = 24;   // lado del QR en mm
 
-        const ETQ_W = ETQ_ANCHO_MM * ETQ_DPMM * ETQ_ESCALA;  // 1600
-        const ETQ_H = ETQ_ALTO_MM  * ETQ_DPMM * ETQ_ESCALA;  // 960
+        const ETQ_W = ETQ_ANCHO_MM * ETQ_DPMM * ETQ_ESCALA;  // 1368
+        const ETQ_H = ETQ_ALTO_MM  * ETQ_DPMM * ETQ_ESCALA;  // 744
         const DPMM  = ETQ_DPMM * ETQ_ESCALA;                 // dots por mm en lienzo
 
         // Reduce el tamaño hasta que el texto quepa; nunca baja del mínimo legible
@@ -204,22 +209,23 @@
                 img.onload = () => {
                     const margen = Math.round(1.2 * DPMM);
 
-                    // --- QR cuadrado a la izquierda ---
-                    const qrLado = ETQ_H - 2 * margen;
+                    // --- QR cuadrado a la izquierda, centrado verticalmente ---
+                    const qrLado = Math.round(ETQ_QR_MM * DPMM);
                     ctx.imageSmoothingEnabled = false;   // bordes limpios
-                    ctx.drawImage(img, margen, margen, qrLado, qrLado);
+                    ctx.drawImage(img, margen, Math.round((ETQ_H - qrLado) / 2), qrLado, qrLado);
                     ctx.imageSmoothingEnabled = true;
 
                     // --- Zona de texto a la derecha ---
-                    const xIni = margen + qrLado + Math.round(1.2 * DPMM);
+                    const xIni = margen + qrLado + Math.round(1.5 * DPMM);
                     const aw = ETQ_W - xIni - margen;
                     const cx = xIni + aw / 2;
 
-                    // Tamaños expresados en mm reales de altura de letra
-                    const T_INV = Math.round(2.6 * DPMM);
-                    const T_NOM = Math.round(1.9 * DPMM);
-                    const T_CPO = Math.round(1.6 * DPMM);
-                    const T_MIN = Math.round(1.1 * DPMM);   // límite legible térmico
+                    // Tamaños expresados en mm reales de altura de letra.
+                    // Aumentados ~38% respecto al formato 50x30 mm.
+                    const T_INV = Math.round(3.6 * DPMM);   // número de inventario
+                    const T_NOM = Math.round(2.6 * DPMM);   // nombre del equipo
+                    const T_CPO = Math.round(2.2 * DPMM);   // marca / modelo / serie
+                    const T_MIN = Math.round(1.5 * DPMM);   // piso legible térmico
 
                     ctx.fillStyle = '#000000';
                     ctx.textAlign = 'center';
@@ -253,8 +259,8 @@
                     const inv = String(equipo.numeroInventario || '');
 
                     // Escala vertical si el bloque no cabe
-                    let total = lineas.reduce((a, l) => a + l.tam * 1.28, 0);
-                    if (inv) total += T_INV * 1.35;
+                    let total = lineas.reduce((a, l) => a + l.tam * 1.26, 0);
+                    if (inv) total += T_INV * 1.32;
                     const disp = ETQ_H - 2 * margen;
                     const esc = total > disp ? disp / total : 1;
 
@@ -262,15 +268,15 @@
                     lineas.forEach(l => {
                         const tam = ajustarTexto(ctx, l.txt, aw, Math.round(l.tam * esc), T_MIN);
                         ctx.font = `bold ${tam}px Arial, Helvetica, sans-serif`;
-                        ctx.fillText(l.txt, cx, y + l.tam * esc * 0.64);
-                        y += l.tam * esc * 1.28;
+                        ctx.fillText(l.txt, cx, y + l.tam * esc * 0.63);
+                        y += l.tam * esc * 1.26;
                     });
 
                     // Número de inventario destacado al pie
                     if (inv) {
                         const tam = ajustarTexto(ctx, inv, aw, Math.round(T_INV * esc), T_MIN);
                         ctx.font = `bold ${tam}px Arial, Helvetica, sans-serif`;
-                        ctx.fillText(inv, cx, y + T_INV * esc * 0.68);
+                        ctx.fillText(inv, cx, y + T_INV * esc * 0.66);
                     }
 
                     resolve(canvas.toDataURL('image/png'));
@@ -1166,7 +1172,7 @@
                   <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">
                     <i className="fas fa-tag mr-2"></i>Etiqueta de Identificación
                     <span className="ml-2 text-[10px] normal-case font-medium text-gray-400">
-                      {ETQ_ANCHO_MM} × {ETQ_ALTO_MM} mm · Zebra 203 dpi
+                      {ETQ_ANCHO_MM} × {ETQ_ALTO_MM} mm · Zebra 300 dpi
                     </span>
                   </p>
                   <div className="flex flex-wrap gap-2 print-hidden">
@@ -1191,7 +1197,7 @@
                   {imgUrl ? (
                     <img src={imgUrl} alt={'Etiqueta ' + (equipo.numeroInventario || '')}
                       className="h-auto rounded shadow-md border border-gray-300 bg-white"
-                      style={{ width: '340px', maxWidth: '100%' }} />
+                      style={{ width: '380px', maxWidth: '100%' }} />
                   ) : !errorEtiqueta ? (
                     <div className="py-12 text-gray-400 text-sm flex items-center gap-2">
                       <i className="fas fa-circle-notch fa-spin"></i> Generando etiqueta...
