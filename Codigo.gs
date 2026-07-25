@@ -4,7 +4,7 @@
  * Hospital San Ángel Inn Patriotismo (HSAIP)
  * Ingeniería Biomédica y Tecnovigilancia
  * ---------------------------------------------------------------------
- * Rev. 02 - Correcciones críticas:
+ * Rev. 04 - Correcciones críticas:
  *   [FIX-01] Respuesta JSONP para evitar bloqueo CORS desde GitHub Pages
  *   [FIX-02] openById() en lugar de getActiveSpreadsheet()
  *   [FIX-03] Mapeo explícito de encabezados MAYÚSCULAS -> camelCase
@@ -13,6 +13,9 @@
  *   [FIX-06] Generación de ID único garantizado
  *   [NEW-07] Bitácora de mantenimientos (folio + técnico)
  *   [NEW-08] Registro de tecnovigilancia NOM-240-SSA1-2012
+ *   [NEW-09] Núm. de Inventario autogenerado en servidor (PAT/CPAT/RPAT),
+ *            atómico bajo el mismo LockService -> sin folios duplicados
+ *            aunque dos personas den de alta equipo al mismo tiempo.
  * =====================================================================
  */
 
@@ -28,6 +31,14 @@ var HOJA_TECNOVIGILANCIA = 'Tecnovigilancia';
 var TZ = 'America/Mexico_City';
 
 /**
+ * [NEW-09] Prefijo de folio por hoja de inventario. El consecutivo se
+ * calcula leyendo la columna NUMERODEINVENTARIO de la propia hoja en el
+ * momento del alta (no un contador aparte), así nunca se desincroniza si
+ * alguien edita la hoja de cálculo directamente.
+ */
+var PREFIJOS_INVENTARIO = { 'Propio': 'PAT', 'Comodato': 'CPAT', 'Renta': 'RPAT' };
+
+/**
  * [FIX-03] Mapa explícito de encabezados.
  * La clave es el encabezado normalizado (sin acentos, sin espacios, MAYÚSCULAS).
  * El valor es la propiedad camelCase que espera el frontend.
@@ -37,47 +48,68 @@ var TZ = 'America/Mexico_City';
  */
 var MAPA_ENCABEZADOS = {
   'ID': 'id',
+
+  // --- Identificación ---
   'NUMERO': 'numero',
   'NO': 'numero',
   'NUMEROINVENTARIO': 'numeroInventario',
-  'NUMERODEINVENTARIO': 'numeroInventario',
+  'NUMERODEINVENTARIO': 'numeroInventario',   // <- tu hoja
   'INVENTARIO': 'numeroInventario',
-  'ESTATUS': 'estatus',
-  'ESTADO': 'estatus',
-  'MOTIVOFUERASERVICIO': 'motivoFueraServicio',
-  'MOTIVOFUERADESERVICIO': 'motivoFueraServicio',
-  'MOTIVO': 'motivoFueraServicio',
   'NOMBRE': 'nombre',
-  'NOMBREDELEQUIPO': 'nombre',
+  'NOMBREDELEQUIPO': 'nombre',                // <- tu hoja
   'EQUIPO': 'nombre',
+
+  // --- Categoría / tipo de tecnología ---
+  'CATEGORIA': 'tipoTecnologia',              // <- tu hoja  [CORREGIDO]
+  'TIPOTECNOLOGIA': 'tipoTecnologia',
+  'TIPODETECNOLOGIA': 'tipoTecnologia',
+
+  // --- Datos técnicos ---
   'MARCA': 'marca',
-  'POLIZAMANTENIMIENTO': 'polizaMantenimiento',
-  'POLIZA': 'polizaMantenimiento',
   'MODELO': 'modelo',
   'NUMEROSERIE': 'numeroSerie',
-  'NUMERODESERIE': 'numeroSerie',
+  'NUMERODESERIE': 'numeroSerie',             // <- tu hoja
   'SERIE': 'numeroSerie',
   'FABRICANTE': 'fabricante',
   'NIVELRIESGO': 'nivelRiesgo',
-  'NIVELDERIESGO': 'nivelRiesgo',
+  'NIVELDERIESGO': 'nivelRiesgo',             // <- tu hoja
   'RIESGO': 'nivelRiesgo',
+
+  // --- Ubicación ---
+  'UBICACIONFISICA': 'ubicacion',             // <- tu hoja  [CORREGIDO]
   'UBICACION': 'ubicacion',
   'AREA': 'ubicacion',
   'SERVICIO': 'ubicacion',
+  'LOCALIZACION': 'ubicacion',
+
+  // --- Administrativos ---
   'FECHAALTA': 'fechaAlta',
-  'FECHADEALTA': 'fechaAlta',
+  'FECHADEALTA': 'fechaAlta',                 // <- tu hoja
+  'PROVEEDORDEMANTENIMIENTO': 'proveedorMantenimiento',  // <- tu hoja  [CORREGIDO]
   'PROVEEDORMANTENIMIENTO': 'proveedorMantenimiento',
   'PROVEEDOR': 'proveedorMantenimiento',
+  'BREVEDESCRIPCION': 'descripcion',          // <- tu hoja  [CORREGIDO]
   'DESCRIPCION': 'descripcion',
-  'TIPOTECNOLOGIA': 'tipoTecnologia',
-  'TIPODETECNOLOGIA': 'tipoTecnologia',
-  'FRECUENCIAMANTENIMIENTO': 'frecuenciaMantenimiento',
+  'POLIZAVIGENTE': 'polizaMantenimiento',     // <- tu hoja  [CORREGIDO]
+  'POLIZAMANTENIMIENTO': 'polizaMantenimiento',
+  'POLIZA': 'polizaMantenimiento',
+
+  // --- Estatus ---
+  'ESTATUS': 'estatus',
+  'ESTADO': 'estatus',
+  'MOTIVOFUERADESERVICIO': 'motivoFueraServicio',  // <- tu hoja
+  'MOTIVOFUERASERVICIO': 'motivoFueraServicio',
+  'MOTIVO': 'motivoFueraServicio',
+
+  // --- Mantenimiento ---
+  'FRECUENCIAMANTENIMIENTO': 'frecuenciaMantenimiento',   // <- tu hoja
   'FRECUENCIADEMANTENIMIENTO': 'frecuenciaMantenimiento',
   'FRECUENCIA': 'frecuenciaMantenimiento',
-  'ULTIMOMANTENIMIENTO': 'ultimoMantenimiento',
+  'ULTIMOMANTENIMIENTO': 'ultimoMantenimiento',           // <- tu hoja
   'ULTIMOMTTO': 'ultimoMantenimiento',
-  'PROXIMOMANTENIMIENTO': 'proximoMantenimiento',
+  'PROXIMOMANTENIMIENTO': 'proximoMantenimiento',         // <- tu hoja
   'PROXIMOMTTO': 'proximoMantenimiento',
+  'HISTORIALDEEJECUCIONES': 'historialEjecuciones',       // <- tu hoja  [CORREGIDO]
   'HISTORIALEJECUCIONES': 'historialEjecuciones',
   'HISTORIAL': 'historialEjecuciones'
 };
@@ -93,7 +125,7 @@ var CAMPOS_FECHA = ['fechaAlta'];
 
 function doGet(e) {
   if (!e || !e.parameter) {
-    return textOut('Backend CMMS activo. Rev.02. Debe invocarse desde la aplicación.');
+    return textOut('Backend CMMS activo. Rev.04. Debe invocarse desde la aplicación.');
   }
 
   var action = e.parameter.action;
@@ -112,7 +144,7 @@ function doGet(e) {
       // [FIX-01] Escritura vía GET+JSONP: evita el preflight CORS del POST
       payload = procesarEscritura(JSON.parse(e.parameter.payload));
     } else if (action === 'ping') {
-      payload = { ok: true, hora: ahora(), version: 'Rev.02' };
+      payload = { ok: true, hora: ahora(), version: 'Rev.04' };
     } else {
       payload = { error: 'Acción no válida: ' + action };
     }
@@ -282,12 +314,49 @@ function procesarEscritura(params) {
   }
 }
 
+/**
+ * [NEW-09] Calcula el siguiente folio (PAT/CPAT/RPAT + consecutivo) leyendo
+ * el máximo actual en la propia hoja. Se ejecuta dentro del LockService de
+ * procesarEscritura, por lo que dos altas simultáneas nunca ven el mismo
+ * máximo: la segunda solicitud espera el lock y ya ve la fila que acaba
+ * de escribir la primera.
+ */
+function generarSiguienteNumeroInventario(hoja, sheetName) {
+  var prefijo = PREFIJOS_INVENTARIO[sheetName] || '';
+  var registros = hoja.getDataRange().getValues();
+  var maximo = 0;
+
+  if (registros.length > 1) {
+    var encabezados = registros[0].map(mapearEncabezado);
+    var invIdx = encabezados.indexOf('numeroInventario');
+    if (invIdx > -1) {
+      for (var i = 1; i < registros.length; i++) {
+        var m = String(registros[i][invIdx] || '').match(/(\d+)\s*$/);
+        if (m) {
+          var n = parseInt(m[1], 10);
+          if (!isNaN(n) && n > maximo) maximo = n;
+        }
+      }
+    }
+  }
+
+  var siguiente = maximo + 1;
+  return { numero: siguiente, folio: prefijo + siguiente };
+}
+
 function accionAgregar(params) {
   var hoja = getHoja(params.sheetName);
   if (!hoja) return { error: 'Hoja no encontrada: ' + params.sheetName };
 
   var data = params.data || {};
-  if (!data.id) data.id = 'INV-' + new Date().getTime();
+
+  // [NEW-09] El folio SIEMPRE lo asigna el servidor; se ignora cualquier
+  // numeroInventario/numero/id que haya calculado el cliente como vista
+  // previa, para garantizar consecutivos únicos por hoja.
+  var auto = generarSiguienteNumeroInventario(hoja, params.sheetName);
+  data.numeroInventario = auto.folio;
+  data.numero = auto.numero;
+  data.id = 'INV-' + auto.folio;
 
   var encabezados = getEncabezados(hoja);
   var fila = encabezados.map(function (clave) {
@@ -297,7 +366,7 @@ function accionAgregar(params) {
   hoja.appendRow(fila);
   registrarAuditoria('ALTA', params.sheetName, data.numeroInventario, data.usuario);
 
-  return { success: true, message: 'Equipo dado de alta', id: data.id };
+  return { success: true, message: 'Equipo dado de alta', id: data.id, numeroInventario: auto.folio };
 }
 
 function accionEditar(params) {
@@ -506,4 +575,33 @@ function pruebaConexion() {
   } catch (e) {
     Logger.log('ERROR: ' + e.toString());
   }
+}
+
+/**
+ * DIAGNÓSTICO: muestra cada encabezado real y su traducción.
+ * Ejecuta esta función y revisa el registro (Ver -> Registros / Ctrl+Enter).
+ */
+function verEncabezados() {
+  var CAMPOS_OK = ['id','numero','numeroInventario','nombre','marca','modelo',
+    'numeroSerie','fabricante','nivelRiesgo','ubicacion','fechaAlta',
+    'proveedorMantenimiento','descripcion','estatus','motivoFueraServicio',
+    'polizaMantenimiento','frecuenciaMantenimiento','ultimoMantenimiento',
+    'proximoMantenimiento','historialEjecuciones','tipoTecnologia'];
+
+  var libro = getLibro();
+  Logger.log('LIBRO: ' + libro.getName());
+
+  HOJAS_INVENTARIO.forEach(function (n) {
+    var h = libro.getSheetByName(n);
+    if (!h) { Logger.log('===== ' + n + ' : NO EXISTE ====='); return; }
+
+    Logger.log('===== ' + n + ' (' + (h.getLastRow() - 1) + ' registros) =====');
+    var crudos = h.getRange(1, 1, 1, h.getLastColumn()).getValues()[0];
+
+    crudos.forEach(function (c, i) {
+      var m = mapearEncabezado(c);
+      var estado = CAMPOS_OK.indexOf(m) > -1 ? 'OK' : '*** NO RECONOCIDO ***';
+      Logger.log((i + 1) + '. "' + c + '" -> ' + m + '  ' + estado);
+    });
+  });
 }

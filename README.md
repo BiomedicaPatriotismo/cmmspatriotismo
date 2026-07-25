@@ -49,6 +49,18 @@ Sube el archivo al repositorio y activa GitHub Pages.
 | 06 | `id: "Propio-undefined"` provocaba edición de la fila equivocada | ID garantizado + `_fila` |
 | 07 | Errores silenciados en `catch` | Banner visible + reintentos + rollback |
 
+## Integración Rev. 04 — Inventario con área, paginación y alta con folio automático
+
+| # | Cambio | Detalle |
+|---|---|---|
+| 08 | La hoja de Inventario no mostraba dónde está cada equipo ni permitía filtrar por eso | Columna **ÁREA** (Ubicación Física) visible en la tabla + filtro desplegable, con "Todas" siempre primero en la lista |
+| 09 | Con 1,000+ equipos por hoja, la tabla se renderizaba completa y saturaba la pantalla | Paginación de **30 en 30** con botones Atrás / Siguiente (se deshabilitan solos en los extremos); cualquier cambio de filtro, búsqueda u hoja regresa a la página 1 |
+| 10 | El Núm. de Inventario se escribía a mano en "Agregar Equipo", sin relación con el consecutivo real de cada hoja | Folio **autogenerado** (PAT/CPAT/RPAT + consecutivo). El formulario muestra una vista previa que se recalcula al cambiar de hoja; el valor definitivo lo asigna el **servidor** dentro del mismo `LockService` que ya protege las escrituras, para que dos altas simultáneas nunca produzcan folios duplicados |
+| 11 | Nivel de Riesgo era texto libre (podía capturarse cualquier cosa) | Ahora es una lista desplegable **I / II / III** en el alta y en la edición; si un registro antiguo tenía otro valor, la edición lo conserva como opción adicional en vez de perderlo silenciosamente |
+| 12 | El banner de errores (`BannerEstado`) solo aparecía en la pestaña Calendarios | Se agregó también a Inventario, que es donde realmente ocurren los errores de alta/validación |
+
+**Importante para desplegar:** después de subir el nuevo `Codigo.gs`, hay que crear una **nueva versión** de la implementación de Apps Script (Implementar → Gestionar implementaciones → Editar → Nueva versión), o el backend seguirá corriendo la lógica anterior y el folio se seguirá calculando solo en el navegador.
+
 ## Funciones nuevas
 
 - **Bitácora** (`Bitacora`): folio automático `MP-2026-0001`, técnico responsable, hallazgos, refacciones, tiempo de paro.

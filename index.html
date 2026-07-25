@@ -364,6 +364,35 @@
 
         const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
+        // ============================================================================
+        // [NEW-09] FOLIO AUTOMÁTICO DE INVENTARIO
+        // ----------------------------------------------------------------------------
+        // Esta función solo genera una VISTA PREVIA en el cliente (para que el
+        // formulario muestre algo mientras se captura). El folio real y definitivo
+        // lo asigna el backend de forma atómica dentro del LockService
+        // (generarSiguienteNumeroInventario en Codigo.gs), así dos altas
+        // simultáneas nunca terminan con el mismo número.
+        // ============================================================================
+        const PREFIJOS_INVENTARIO = { Propio: 'PAT', Comodato: 'CPAT', Renta: 'RPAT' };
+
+        const previsualizarSiguienteFolio = (origen, listaEquipos) => {
+            const prefijo = PREFIJOS_INVENTARIO[origen] || '';
+            let max = 0;
+            listaEquipos.forEach(eq => {
+                if (eq.origen !== origen) return;
+                const m = String(eq.numeroInventario || '').match(/(\d+)\s*$/);
+                if (m) {
+                    const n = parseInt(m[1], 10);
+                    if (!isNaN(n) && n > max) max = n;
+                }
+            });
+            return `${prefijo}${max + 1}`;
+        };
+
+        // Tamaño de página del listado de Inventario (evita saturar la pantalla
+        // con hojas de 1000+ equipos).
+        const INVENTARIO_PAGE_SIZE = 30;
+
         // Función Compartida: Proyectar Meses
         const obtenerMesesProgramados = (ultimoMantenimiento, frecuencia, targetYear) => {
             const mesesProgramados = new Set();
@@ -881,6 +910,8 @@
           
           const [searchTerm, setSearchTerm] = useState('');
           const [filterEstatus, setFilterEstatus] = useState('Todos');
+          const [filterUbicacion, setFilterUbicacion] = useState('Todas');
+          const [paginaActual, setPaginaActual] = useState(0);
           
           // Filtros Calendario
           const [filterUbicacionCal, setFilterUbicacionCal] = useState('Todas');
@@ -904,18 +935,34 @@
               const matchHoja = e.origen === inventarioTab;
               const matchEstatus = filterEstatus === 'Todos' ||
                 (filterEstatus === 'Fuera de Servicio' ? estaFueraServicio(e) : estaEnServicio(e));
-              if (!searchTerm) return matchHoja && matchEstatus;
+              const matchUbicacion = filterUbicacion === 'Todas' || e.ubicacion === filterUbicacion;
+              if (!searchTerm) return matchHoja && matchEstatus && matchUbicacion;
               const s = searchTerm.toLowerCase();
-              return matchHoja && matchEstatus && (
+              return matchHoja && matchEstatus && matchUbicacion && (
                 String(e.nombre || '').toLowerCase().includes(s) || String(e.numeroInventario || '').toLowerCase().includes(s) || String(e.marca || '').toLowerCase().includes(s) || String(e.numeroSerie || '').toLowerCase().includes(s)
               );
             });
-          }, [equipos, inventarioTab, searchTerm, filterEstatus]);
+          }, [equipos, inventarioTab, searchTerm, filterEstatus, filterUbicacion]);
 
+          // [NEW] Paginación del listado de Inventario: 30 resultados por página.
+          const totalPaginasInventario = Math.max(1, Math.ceil(equiposFiltrados.length / INVENTARIO_PAGE_SIZE));
+          const paginaSegura = Math.min(paginaActual, totalPaginasInventario - 1);
+          const equiposPagina = useMemo(() => {
+              const inicio = paginaSegura * INVENTARIO_PAGE_SIZE;
+              return equiposFiltrados.slice(inicio, inicio + INVENTARIO_PAGE_SIZE);
+          }, [equiposFiltrados, paginaSegura]);
+
+          // [FIX] "Todas" se fija primero; el resto se ordena con acentos correctos.
           const ubicacionesUnicas = useMemo(() => {
               const locs = equipos.filter(e => e.origen === inventarioTab).map(e => e.ubicacion).filter(u => u && u.trim() !== '');
-              return ['Todas', ...new Set(locs)].sort();
+              return ['Todas', ...Array.from(new Set(locs)).sort((a, b) => a.localeCompare(b, 'es'))];
           }, [equipos, inventarioTab]);
+
+          // [NEW-09] Vista previa del siguiente folio para el formulario de alta.
+          const siguienteFolioPreview = useMemo(
+              () => previsualizarSiguienteFolio(nuevoEquipo.origen, equipos),
+              [nuevoEquipo.origen, equipos]
+          );
 
           const equiposCalendario = useMemo(() => {
               return equipos.filter(e => {
@@ -1026,31 +1073,35 @@
           const handleAddEquipo = async (e) => {
             e.preventDefault();
 
-            // Validación previa: evita altas incompletas en el inventario
-            if (!nuevoEquipo.numeroInventario || !nuevoEquipo.nombre) {
-              setSyncError('El número de inventario y el nombre del equipo son obligatorios.');
+            // Validación previa: evita altas incompletas en el inventario.
+            // [NEW-09] Ya no se valida numeroInventario aquí: lo asigna el servidor.
+            if (!nuevoEquipo.nombre || !nuevoEquipo.ubicacion) {
+              setSyncError('El nombre del equipo y el área/ubicación son obligatorios.');
               return;
             }
-            const duplicado = equipos.some(eq =>
-              eq.origen === nuevoEquipo.origen &&
-              String(eq.numeroInventario).trim() === String(nuevoEquipo.numeroInventario).trim()
-            );
-            if (duplicado) {
-              setSyncError(`El número de inventario ${nuevoEquipo.numeroInventario} ya existe en ${nuevoEquipo.origen}.`);
+            if (!nuevoEquipo.nivelRiesgo) {
+              setSyncError('Selecciona un nivel de riesgo (I, II o III).');
               return;
             }
-
-            const id = `INV-${nuevoEquipo.numeroInventario}`;
-            const numero = equipos.length > 0 ? Math.max(...equipos.map(eq => Number(eq.numero) || 0)) + 1 : 1;
-            const equipoGuardar = { ...nuevoEquipo, id, numero };
 
             setIsSyncing(true);
             setSyncError(null);
             try {
-              await jsonpConReintentos({
+              // [NEW-09] El backend calcula el folio real (PAT/CPAT/RPAT + consecutivo)
+              // de forma atómica y lo regresa en la respuesta; esto evita folios
+              // duplicados si dos personas dan de alta equipo al mismo tiempo.
+              const resultado = await jsonpConReintentos({
                 action: 'save',
-                payload: JSON.stringify({ action: 'add', data: equipoGuardar, sheetName: equipoGuardar.origen })
+                payload: JSON.stringify({ action: 'add', data: nuevoEquipo, sheetName: nuevoEquipo.origen })
               });
+              const folioAsignado = resultado.numeroInventario || siguienteFolioPreview;
+              const matchNum = String(folioAsignado).match(/(\d+)\s*$/);
+              const equipoGuardar = {
+                ...nuevoEquipo,
+                numeroInventario: folioAsignado,
+                numero: matchNum ? parseInt(matchNum[1], 10) : '',
+                id: resultado.id || `INV-${folioAsignado}`
+              };
               setEquipos([...equipos, equipoGuardar]);
               setShowAddEquipo(false);
               setNuevoEquipo(estadoInicialEquipo);
@@ -1449,7 +1500,16 @@
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={equipoEditado.fabricante} onChange={(e) => setEquipoEditado({...equipoEditado, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={equipoEditado.ubicacion} onChange={(e) => setEquipoEditado({...equipoEditado, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={esAfirmativo(equipoEditado.polizaMantenimiento) ? 'SI' : 'NO'} onChange={(e) => setEquipoEditado({...equipoEditado, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="SI">Sí</option><option value="NO">No</option></select></div>
-                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={equipoEditado.nivelRiesgo} onChange={(e) => setEquipoEditado({...equipoEditado, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Nivel de Riesgo *</label>
+                        <select required value={equipoEditado.nivelRiesgo || ''} onChange={(e) => setEquipoEditado({...equipoEditado, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                          <option value="" disabled>Selecciona…</option>
+                          {equipoEditado.nivelRiesgo && !['I', 'II', 'III'].includes(equipoEditado.nivelRiesgo) && (
+                            <option value={equipoEditado.nivelRiesgo}>{equipoEditado.nivelRiesgo} (valor previo)</option>
+                          )}
+                          <option value="I">I</option><option value="II">II</option><option value="III">III</option>
+                        </select>
+                      </div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={equipoEditado.proveedorMantenimiento} onChange={(e) => setEquipoEditado({...equipoEditado, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={equipoEditado.fechaAlta ? equipoEditado.fechaAlta.split('T')[0] : ''} onChange={(e) => setEquipoEditado({...equipoEditado, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                       <div className="lg:col-span-3"><label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label><textarea value={equipoEditado.descripcion} onChange={(e) => setEquipoEditado({...equipoEditado, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea></div>
@@ -1561,6 +1621,7 @@
 
             return (
               <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
+                <BannerEstado />
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <h2 className="text-2xl font-bold flex items-center gap-2"><i className="fas fa-stethoscope text-blue-600"></i> Hojas de Inventario</h2>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1571,19 +1632,25 @@
 
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                   <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto">
-                    <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
-                    <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
-                    <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
+                    <button onClick={() => { setInventarioTab('Propio'); setFilterUbicacion('Todas'); setPaginaActual(0); }} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
+                    <button onClick={() => { setInventarioTab('Comodato'); setFilterUbicacion('Todas'); setPaginaActual(0); }} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
+                    <button onClick={() => { setInventarioTab('Renta'); setFilterUbicacion('Todas'); setPaginaActual(0); }} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
                   </div>
 
-                  <div className="p-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row gap-3">
-                    <div className="relative flex-1">
+                  <div className="p-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row flex-wrap gap-3">
+                    <div className="relative flex-1 min-w-[200px]">
                       <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                      <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder={`Buscar en ${inventarioTab.toLowerCase()} (Nombre, Marca, Serie, Inv)...`} className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
+                      <input type="text" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setPaginaActual(0); }} placeholder={`Buscar en ${inventarioTab.toLowerCase()} (Nombre, Marca, Serie, Inv)...`} className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt"></i> Área:</label>
+                        <select value={filterUbicacion} onChange={(e) => { setFilterUbicacion(e.target.value); setPaginaActual(0); }} className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium max-w-[180px]">
+                            {ubicacionesUnicas.map(ub => <option key={ub} value={ub}>{ub}</option>)}
+                        </select>
                     </div>
                     <div className="flex items-center gap-2">
                         <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter"></i> Filtro Estatus:</label>
-                        <select value={filterEstatus} onChange={(e) => setFilterEstatus(e.target.value)} className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                        <select value={filterEstatus} onChange={(e) => { setFilterEstatus(e.target.value); setPaginaActual(0); }} className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
                             <option value="Todos">Mostrar Todos</option><option value="En Servicio">Sólo En Servicio</option><option value="Fuera de Servicio">Sólo Fuera de Servicio</option>
                         </select>
                     </div>
@@ -1593,17 +1660,18 @@
                     <table className="w-full text-left border-collapse whitespace-nowrap">
                       <thead>
                         <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
-                          <th className="p-4 font-bold border-b">NO. INV.</th><th className="p-4 font-bold border-b">EQUIPO / TECNOLOGÍA</th><th className="p-4 font-bold border-b">MARCA</th><th className="p-4 font-bold border-b">MODELO</th><th className="p-4 font-bold border-b">SERIE</th>
+                          <th className="p-4 font-bold border-b">NO. INV.</th><th className="p-4 font-bold border-b">EQUIPO / TECNOLOGÍA</th><th className="p-4 font-bold border-b">ÁREA</th><th className="p-4 font-bold border-b">MARCA</th><th className="p-4 font-bold border-b">MODELO</th><th className="p-4 font-bold border-b">SERIE</th>
                         </tr>
                       </thead>
                       <tbody>
                         {equiposFiltrados.length === 0 && (
-                          <tr><td colSpan="5" className="p-8 text-center text-gray-500">No se encontraron equipos con esos criterios.</td></tr>
+                          <tr><td colSpan="6" className="p-8 text-center text-gray-500">No se encontraron equipos con esos criterios.</td></tr>
                         )}
-                        {equiposFiltrados.map((equipo) => (
+                        {equiposPagina.map((equipo) => (
                           <tr key={equipo.id} onClick={() => setSelectedEquipo(equipo)} className="border-b border-gray-50 hover:bg-blue-50/50 transition cursor-pointer text-sm group">
                             <td className="p-4"><span className={`px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider shadow-sm transition-colors ${getEstatusColor(equipo.estatus)}`}>{equipo.numeroInventario || 'S/N'}</span></td>
                             <td className="p-4 font-medium group-hover:text-blue-700 transition-colors">{equipo.nombre}</td>
+                            <td className="p-4 text-gray-600">{equipo.ubicacion || '-'}</td>
                             <td className="p-4 text-gray-600">{equipo.marca || '-'}</td>
                             <td className="p-4 text-gray-600">{equipo.modelo || '-'}</td>
                             <td className="p-4 text-gray-500 font-mono text-xs">{equipo.numeroSerie || '-'}</td>
@@ -1611,6 +1679,23 @@
                         ))}
                       </tbody>
                     </table>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 bg-gray-50/60">
+                    <p className="text-xs text-gray-500 font-medium">
+                      {equiposFiltrados.length === 0
+                        ? 'Sin resultados'
+                        : `Mostrando ${paginaSegura * INVENTARIO_PAGE_SIZE + 1}–${Math.min((paginaSegura + 1) * INVENTARIO_PAGE_SIZE, equiposFiltrados.length)} de ${equiposFiltrados.length} equipos`}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <button type="button" onClick={() => setPaginaActual(p => Math.max(0, p - 1))} disabled={paginaSegura === 0} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 hover:bg-white hover:border-blue-300 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition">
+                        <i className="fas fa-chevron-left"></i> Atrás
+                      </button>
+                      <span className="text-xs font-bold text-gray-500">Página {paginaSegura + 1} de {totalPaginasInventario}</span>
+                      <button type="button" onClick={() => setPaginaActual(p => Math.min(totalPaginasInventario - 1, p + 1))} disabled={paginaSegura >= totalPaginasInventario - 1} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 hover:bg-white hover:border-blue-300 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition">
+                        Siguiente <i className="fas fa-chevron-right"></i>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1654,12 +1739,20 @@
                     
                     <form onSubmit={handleAddEquipo} className="p-6 overflow-y-auto flex-1">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div className="lg:col-span-3 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
-                          <label className="block text-xs font-bold text-blue-800 mb-1">¿A qué hoja de cálculo pertenece este registro?</label>
-                          <select value={nuevoEquipo.origen} onChange={(e) => setNuevoEquipo({...nuevoEquipo, origen: e.target.value})} className="w-full md:w-1/3 px-3 py-2 border border-blue-200 rounded-lg text-sm font-medium text-blue-900 bg-white"><option value="Propio">Hoja: Equipo Propio</option><option value="Comodato">Hoja: Equipo en Comodato</option><option value="Renta">Hoja: Equipo en Renta</option></select>
+                        <div className="lg:col-span-3 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2 flex flex-col md:flex-row md:items-end gap-3">
+                          <div className="flex-1">
+                            <label className="block text-xs font-bold text-blue-800 mb-1">¿A qué hoja de cálculo pertenece este registro?</label>
+                            <select value={nuevoEquipo.origen} onChange={(e) => setNuevoEquipo({...nuevoEquipo, origen: e.target.value})} className="w-full md:w-2/3 px-3 py-2 border border-blue-200 rounded-lg text-sm font-medium text-blue-900 bg-white"><option value="Propio">Hoja: Equipo Propio</option><option value="Comodato">Hoja: Equipo en Comodato</option><option value="Renta">Hoja: Equipo en Renta</option></select>
+                          </div>
+                          <div className="md:w-52">
+                            <label className="block text-xs font-bold text-blue-800 mb-1"><i className="fas fa-hashtag mr-1"></i>Núm. de Inventario</label>
+                            <div className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm bg-white flex items-center justify-between">
+                              <span className="font-bold text-blue-900">{siguienteFolioPreview}</span>
+                              <span className="text-[10px] font-medium text-blue-400">automático</span>
+                            </div>
+                          </div>
                         </div>
-                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Núm. de Inventario Interno *</label><input required type="text" value={nuevoEquipo.numeroInventario} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroInventario: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej. INV-1234" /></div>
-                        <div className="lg:col-span-2"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label><input required type="text" value={nuevoEquipo.nombre} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div className="lg:col-span-3"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label><input required type="text" value={nuevoEquipo.nombre} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label><select value={nuevoEquipo.tipoTecnologia} onChange={(e) => setNuevoEquipo({...nuevoEquipo, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Equipo Médico">Equipo Médico</option><option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option><option value="Infraestructura">Infraestructura</option></select></div>
                         <div><label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label><select required value={nuevoEquipo.estatus} onChange={(e) => setNuevoEquipo({...nuevoEquipo, estatus: e.target.value, motivoFueraServicio: e.target.value === 'En Servicio' ? '' : motivosOptions[0]})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="En Servicio">En Servicio</option><option value="Fuera de Servicio">Fuera de Servicio</option></select></div>
                         {estaFueraServicio(nuevoEquipo) && (<div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2"><label className="block text-xs font-bold text-red-600 mb-1">Motivo de "Fuera de Servicio"</label><select value={nuevoEquipo.motivoFueraServicio} onChange={(e) => setNuevoEquipo({...nuevoEquipo, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">{motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}</select></div>)}
@@ -1677,7 +1770,7 @@
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={nuevoEquipo.fabricante} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={nuevoEquipo.ubicacion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={esAfirmativo(nuevoEquipo.polizaMantenimiento) ? 'SI' : 'NO'} onChange={(e) => setNuevoEquipo({...nuevoEquipo, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="SI">Sí</option><option value="NO">No</option></select></div>
-                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Nivel de Riesgo</label><input type="text" value={nuevoEquipo.nivelRiesgo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Nivel de Riesgo *</label><select required value={nuevoEquipo.nivelRiesgo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="I">I</option><option value="II">II</option><option value="III">III</option></select></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={nuevoEquipo.proveedorMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={nuevoEquipo.fechaAlta} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                         <div className="lg:col-span-3"><label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label><textarea value={nuevoEquipo.descripcion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea></div>
