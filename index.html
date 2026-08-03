@@ -15,9 +15,11 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Chart.js y PapaParse para el Dashboard de Indicadores -->
+    <!-- Chart.js para el Dashboard de Indicadores -->
+    <!-- [REV-05] Se eliminó PapaParse: los indicadores ya no se leen de un
+         CSV publicado; llegan por JSONP desde la hoja "Indicadores" del
+         mismo libro de Google Sheets del inventario. -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
     <!-- FontAwesome y Google Fonts -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -113,7 +115,35 @@
         // CONFIGURACIÓN GLOBAL
         // ============================================================================
         const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyctwfWaVlLRZVUH9P-6Z_PvCg_91W1Yc4sgFym72udvRq310JKk8p4GJR22Sqp-Ano/exec"; 
-        const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTpv30jyddCIL2Zwwkz_zlEk52O_Aa1iioBPZv90ZnjJ4uy7grVHbIcJQgIRP6xDvLJ53UJ396WfcZE/pub?output=csv";
+        // [REV-05] GOOGLE_SHEET_CSV_URL eliminada: el dashboard de indicadores
+        // ahora lee la hoja "Indicadores" del MISMO libro del inventario, en la
+        // misma llamada getAll. Ya puedes des-publicar el CSV en Sheets
+        // (Archivo -> Compartir -> Publicar en la web -> Dejar de publicar),
+        // con lo que esos datos dejan de estar expuestos públicamente.
+
+        // ====================================================================
+        // [SEC] SESIÓN DE ACCESO
+        // --------------------------------------------------------------------
+        // El PIN se valida en el SERVIDOR (Codigo.gs), que resuelve el nombre
+        // del usuario y registra cada intento —válido o no— en la hoja
+        // "Accesos". Aquí solo se guarda la sesión activa del navegador.
+        // ====================================================================
+        const SESION = {
+            get pin() { try { return window.localStorage.getItem('cmms_pin') || ''; } catch (e) { return ''; } },
+            get usuario() { try { return window.localStorage.getItem('cmms_usuario') || ''; } catch (e) { return ''; } },
+            guardar(pin, usuario) {
+                try {
+                    window.localStorage.setItem('cmms_pin', pin);
+                    window.localStorage.setItem('cmms_usuario', usuario);
+                } catch (e) {}
+            },
+            limpiar() {
+                try {
+                    window.localStorage.removeItem('cmms_pin');
+                    window.localStorage.removeItem('cmms_usuario');
+                } catch (e) {}
+            }
+        };
 
         // Normaliza Si/SI/Sí/sí/S/1/TRUE -> true. Evita depender de la
         // escritura exacta capturada en la hoja de cálculo.
@@ -323,7 +353,17 @@
                     else resolve(data);
                 };
 
-                const qs = new URLSearchParams({ ...params, callback: cbName }).toString();
+                // [SEC] Toda petición viaja con la sesión activa. El backend
+                // valida el PIN, resuelve el nombre real del usuario y registra
+                // el acceso en la hoja "Accesos". Los parámetros explícitos
+                // (p. ej. el PIN capturado en la pantalla de login) tienen
+                // prioridad sobre los de la sesión guardada.
+                const qs = new URLSearchParams({
+                    pin: SESION.pin,
+                    ua: (navigator.userAgent || '').slice(0, 150),
+                    ...params,
+                    callback: cbName
+                }).toString();
                 script.src = `${GOOGLE_SHEETS_WEBAPP_URL}?${qs}`;
                 script.onerror = () => {
                     if (terminado) return;
@@ -461,7 +501,7 @@
         // ============================================================================
         // COMPONENTE: DASHBOARD DE INDICADORES (Oscuro)
         // ============================================================================
-        const IndicadoresDashboard = ({ equipos }) => {
+        const IndicadoresDashboard = ({ equipos, indicadores, sincronizando, errorSync }) => {
             const [dataSet, setDataSet] = useState({});
             const [historico, setHistorico] = useState({ meses: [], mp: [], gastoTotal: [] });
             const [currentMonth, setCurrentMonth] = useState('');
@@ -478,21 +518,20 @@
             const expenseTrendChartRef = useRef(null);
             const chartInstances = useRef({});
 
-            // Cargar Datos desde CSV
+            // [REV-05] Los indicadores llegan en el mismo getAll que el
+            // inventario, desde la hoja "Indicadores" del mismo libro.
+            // Ya no hay una segunda descarga (CSV) ni datos publicados aparte.
             useEffect(() => {
-                Papa.parse(GOOGLE_SHEET_CSV_URL, {
-                    download: true,
-                    header: true,
-                    complete: (results) => {
-                        procesarDatos(results.data);
-                        setIsLoading(false);
-                    },
-                    error: () => {
-                        setError(true);
-                        setIsLoading(false);
-                    }
-                });
-            }, []);
+                if (sincronizando) { setIsLoading(true); return; }
+                if (errorSync && (!indicadores || indicadores.length === 0)) {
+                    setError(true);
+                    setIsLoading(false);
+                    return;
+                }
+                setError(false);
+                procesarDatos(indicadores || []);
+                setIsLoading(false);
+            }, [indicadores, sincronizando, errorSync]);
 
             const obtenerMesAnterior = () => {
                 const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -501,11 +540,20 @@
                 return meses[mesIndex];
             };
 
+            const ORDEN_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
             const procesarDatos = (rows) => {
                 let tempDataSet = {}; 
                 let histMeses = [], histMP = [], histGasto = [];
 
-                rows.forEach(row => {
+                // [FIX] El histórico se ordena por mes calendario aunque las
+                // filas de la hoja estén capturadas en otro orden.
+                const ordenadas = (rows || []).slice().sort((a, b) =>
+                    ORDEN_MESES.indexOf(String(a.mes || '').trim().toLowerCase()) -
+                    ORDEN_MESES.indexOf(String(b.mes || '').trim().toLowerCase())
+                );
+
+                ordenadas.forEach(row => {
                     const mes = String(row.mes || '').trim().toLowerCase();
                     if (!mes) return;
                     const mesFormateado = mes.charAt(0).toUpperCase() + mes.slice(1);
@@ -697,14 +745,28 @@
                 <div className="flex flex-col items-center justify-center p-12 text-center h-full text-slate-800">
                     <i className="fa-solid fa-triangle-exclamation text-6xl text-red-500 mb-4 animate-pulse"></i>
                     <h2 className="text-2xl font-bold mb-2">Error de Conexión a la Nube</h2>
-                    <p className="text-slate-500 max-w-md">No se pudo recuperar la información del Dashboard de Indicadores.</p>
+                    <p className="text-slate-500 max-w-md">No se pudo recuperar la hoja "Indicadores" del libro de Google Sheets. Usa el botón "Sincronizar Sheets" para reintentar.</p>
                 </div>
             );
 
-            if (isLoading || !currentData) return (
+            if (isLoading) return (
                 <div className="flex flex-col items-center justify-center p-12 text-slate-800 h-full">
                     <i className="fa-solid fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
                     <p className="font-medium">Cargando indicadores...</p>
+                </div>
+            );
+
+            // [REV-05] Hoja Indicadores existente pero sin filas capturadas:
+            // antes esto dejaba el spinner girando para siempre.
+            if (!currentData) return (
+                <div className="flex flex-col items-center justify-center p-12 text-center h-full text-slate-800">
+                    <i className="fa-solid fa-table-list text-6xl text-slate-300 mb-4"></i>
+                    <h2 className="text-2xl font-bold mb-2">Sin indicadores capturados</h2>
+                    <p className="text-slate-500 max-w-md">
+                        La hoja <strong>"Indicadores"</strong> del libro de inventario aún no tiene filas.
+                        Captura una fila por mes (columna <code>mes</code> en minúsculas: enero, febrero...)
+                        con los KPI del periodo y vuelve a sincronizar.
+                    </p>
                 </div>
             );
 
@@ -863,7 +925,7 @@
                             <h3 className="text-lg font-bold text-white flex items-center"><i className="fas fa-clipboard-check text-primary mr-2"></i> Cumplimiento Mensual (Tolerancia ±1 Mes)</h3>
                             <div className="flex items-center gap-2 print-hidden">
                                 <label className="text-sm font-bold text-slate-400">AÑO:</label>
-                                <input type="number" value={dashYear} onChange={(e) => setDashYear(parseInt(e.target.value))} className="w-20 p-1 text-center bg-dark border border-slate-700 rounded text-sm font-bold text-white outline-none focus:border-primary" />
+                                <input type="number" value={dashYear} onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setDashYear(v); }} className="w-20 p-1 text-center bg-dark border border-slate-700 rounded text-sm font-bold text-white outline-none focus:border-primary" />
                             </div>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -889,6 +951,93 @@
         };
 
         // ============================================================================
+        // [SEC] PANTALLA DE ACCESO
+        // ----------------------------------------------------------------------------
+        // El PIN NO se valida aquí (el HTML es público en GitHub Pages y cualquiera
+        // puede leerlo): se envía al backend, que lo compara contra CLAVES_ACCESO,
+        // resuelve el nombre del usuario y registra el intento —válido o fallido—
+        // en la hoja "Accesos" del libro de Google Sheets.
+        // ============================================================================
+        const PantallaAcceso = ({ onAcceso }) => {
+            const [pin, setPin] = useState('');
+            const [verificando, setVerificando] = useState(false);
+            const [errorAcceso, setErrorAcceso] = useState(null);
+
+            const entrar = async (e) => {
+                e.preventDefault();
+                const limpio = pin.trim();
+                if (!limpio) { setErrorAcceso('Escribe tu PIN de acceso.'); return; }
+                setVerificando(true);
+                setErrorAcceso(null);
+                try {
+                    const resp = await jsonpRequest({ action: 'login', pin: limpio });
+                    if (resp && resp.ok && resp.usuario) {
+                        onAcceso(limpio, resp.usuario);
+                    } else {
+                        setErrorAcceso('Respuesta inesperada del servidor.');
+                    }
+                } catch (err) {
+                    const msg = String(err.message || '');
+                    setErrorAcceso(msg.indexOf('ACCESO_DENEGADO') > -1
+                        ? 'PIN incorrecto. El intento quedó registrado en la bitácora de accesos.'
+                        : 'No se pudo verificar el acceso: ' + msg);
+                } finally {
+                    setVerificando(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans">
+                    <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-8 animate-in fade-in zoom-in-95 duration-300">
+                        <div className="flex flex-col items-center mb-6">
+                            <div className="bg-blue-500 p-3 rounded-xl w-14 h-14 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/20">
+                                <i className="fas fa-thermometer-half text-white text-2xl"></i>
+                            </div>
+                            <h1 className="text-2xl font-bold text-white tracking-tight">MediCMMS</h1>
+                            <p className="text-xs text-slate-400 mt-1">Ingeniería Biomédica · HSAIP</p>
+                        </div>
+
+                        <form onSubmit={entrar} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                                    <i className="fas fa-key mr-2 text-blue-400"></i>PIN de acceso
+                                </label>
+                                <input
+                                    type="password"
+                                    value={pin}
+                                    onChange={(e) => setPin(e.target.value)}
+                                    autoFocus
+                                    autoComplete="current-password"
+                                    placeholder="••••••••"
+                                    className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-lg text-white text-center text-lg tracking-widest outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition"
+                                />
+                            </div>
+
+                            {errorAcceso && (
+                                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-300 flex items-start gap-2">
+                                    <i className="fas fa-triangle-exclamation mt-0.5"></i>
+                                    <span>{errorAcceso}</span>
+                                </div>
+                            )}
+
+                            <button type="submit" disabled={verificando}
+                                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                                {verificando
+                                    ? (<><i className="fas fa-circle-notch fa-spin"></i> Verificando...</>)
+                                    : (<><i className="fas fa-right-to-bracket"></i> Entrar</>)}
+                            </button>
+                        </form>
+
+                        <p className="text-[11px] text-slate-500 mt-6 text-center leading-relaxed">
+                            <i className="fas fa-shield-halved mr-1"></i>
+                            Cada intento de acceso queda registrado con fecha, hora y resultado.
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        // ============================================================================
         // LÓGICA PRINCIPAL CMMS (INVENTARIO Y CALENDARIOS)
         // ============================================================================
         const CMMSHospitalario = () => {
@@ -899,6 +1048,11 @@
           const [syncError, setSyncError] = useState(null);
           const [ultimaSync, setUltimaSync] = useState(null);
           const [bitacora, setBitacora] = useState([]);
+          // [REV-05] Filas de la hoja "Indicadores" (mismo libro del inventario)
+          const [indicadores, setIndicadores] = useState([]);
+          // [SEC] Usuario de la sesión activa; el nombre lo resuelve el backend
+          // a partir del PIN, nunca lo declara el cliente.
+          const [usuarioActivo, setUsuarioActivo] = useState(SESION.usuario);
           // Técnico responsable: se adjunta a cada folio de bitácora (trazabilidad)
           const [tecnicoActivo, setTecnicoActivo] = useState(() => {
             try { return window.localStorage.getItem('cmms_tecnico') || ''; } catch (e) { return ''; }
@@ -928,7 +1082,23 @@
           };
           const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
 
-          useEffect(() => { handleSyncSheets(); }, []);
+          // [SEC] Solo se sincroniza con una sesión activa; si el backend
+          // rechaza el PIN guardado (p. ej. fue revocado), la sesión se cierra
+          // y vuelve a aparecer la pantalla de acceso.
+          useEffect(() => { if (usuarioActivo) handleSyncSheets(); }, [usuarioActivo]);
+
+          const esAccesoDenegado = (err) =>
+            String((err && err.message) || '').indexOf('ACCESO_DENEGADO') > -1;
+
+          const cerrarSesion = () => {
+            SESION.limpiar();
+            setUsuarioActivo('');
+            setEquipos([]);
+            setIndicadores([]);
+            setBitacora([]);
+            setSelectedEquipo(null);
+            setSyncError(null);
+          };
 
           const equiposFiltrados = useMemo(() => {
             return equipos.filter(e => {
@@ -1019,6 +1189,7 @@
 
               setEquipos(consolidado);
               setBitacora(data.bitacora || []);
+              setIndicadores(data.indicadores || []); // [REV-05] misma hoja de cálculo
               setUltimaSync(data.sincronizado || new Date().toLocaleString('es-MX'));
 
               if (consolidado.length === 0) {
@@ -1026,6 +1197,7 @@
               }
             } catch (error) {
               console.error(error);
+              if (esAccesoDenegado(error)) { cerrarSesion(); return; }
               setSyncError(error.message || 'Error desconocido al sincronizar.');
             } finally {
               setIsSyncing(false);
@@ -1052,9 +1224,10 @@
               return true;
             } catch (error) {
               console.error(error);
-              setSyncError('No se guardó en Google Sheets: ' + error.message);
               // Revierte para que la pantalla no muestre datos que no se persistieron
               if (estadoPrevio) setEquipos(estadoPrevio);
+              if (esAccesoDenegado(error)) { cerrarSesion(); return false; }
+              setSyncError('No se guardó en Google Sheets: ' + error.message);
               return false;
             } finally {
               setIsSyncing(false);
@@ -1142,7 +1315,7 @@
                         ubicacion: equipo.ubicacion,
                         tipo: 'MP',
                         periodo: targetStr,
-                        tecnico: tecnicoActivo || 'No especificado',
+                        tecnico: tecnicoActivo || usuarioActivo || 'No especificado',
                         estatusFinal: 'Concluido'
                       }
                     })
@@ -1335,7 +1508,7 @@
                           </div>
                           <div className="flex items-center gap-2">
                               <label className="text-xs font-bold text-gray-500 uppercase">Año:</label>
-                              <input type="number" value={calendarYear} onChange={(e) => setCalendarYear(parseInt(e.target.value))} className="w-24 py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none text-center font-bold" />
+                              <input type="number" value={calendarYear} onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setCalendarYear(v); }} className="w-24 py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none text-center font-bold" />
                           </div>
                       </div>
 
@@ -1577,7 +1750,7 @@
                                   const updated = { ...selectedEquipo, estatus: e.target.value };
                                   if (e.target.value === 'En Servicio') updated.motivoFueraServicio = '';
                                   else updated.motivoFueraServicio = motivosOptions[0];
-                                  setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated);
+                                  setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated, equipos);
                               }} className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${estaEnServicio(selectedEquipo) ? 'text-emerald-700' : 'text-red-700'}`}>
                               <option value="En Servicio" className="text-emerald-700 font-bold">En Servicio</option><option value="Fuera de Servicio" className="text-red-700 font-bold">Fuera de Servicio</option>
                             </select>
@@ -1587,7 +1760,7 @@
                               <label className="text-[10px] font-bold text-red-500 uppercase">Motivo:</label>
                               <select value={selectedEquipo.motivoFueraServicio || ''} onChange={(e) => {
                                     const updated = { ...selectedEquipo, motivoFueraServicio: e.target.value };
-                                    setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated);
+                                    setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated, equipos);
                                 }} className="text-xs font-medium border border-red-200 rounded p-1.5 text-red-700 bg-red-50 w-full outline-none">
                                 <option value="" disabled>Seleccione un motivo...</option>{motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
                               </select>
@@ -1702,6 +1875,17 @@
             );
           };
 
+          // [SEC] Sin sesión válida no se renderiza nada del CMMS ni se pide
+          // información al backend: primero la pantalla de acceso.
+          if (!usuarioActivo) {
+            return (
+              <PantallaAcceso onAcceso={(pin, usuario) => {
+                SESION.guardar(pin, usuario);
+                setUsuarioActivo(usuario);
+              }} />
+            );
+          }
+
           return (
             <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
               <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10 md:min-h-screen print-hidden">
@@ -1718,11 +1902,25 @@
                   <button onClick={() => {setActiveTab('equipos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'equipos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-stethoscope w-5 text-center"></i> Inventario</button>
                   <button onClick={() => {setActiveTab('calendarios'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'calendarios' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="far fa-calendar-alt w-5 text-center"></i> Calendarios</button>
                 </nav>
+
+                {/* [SEC] Sesión activa: nombre resuelto por el backend + salida */}
+                <div className="p-4 border-t border-slate-800 flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Sesión</p>
+                    <p className="text-sm font-medium text-slate-200 truncate" title={usuarioActivo}>
+                      <i className="fas fa-user-shield mr-2 text-blue-400"></i>{usuarioActivo}
+                    </p>
+                  </div>
+                  <button onClick={cerrarSesion} title="Cerrar sesión"
+                    className="text-slate-400 hover:text-red-400 transition px-2 py-1.5 rounded-lg hover:bg-slate-800 text-sm font-medium whitespace-nowrap">
+                    <i className="fas fa-sign-out-alt mr-1"></i> Salir
+                  </button>
+                </div>
               </aside>
 
               <main className="flex-1 p-0 md:p-6 overflow-y-auto relative">
                 <div className={`max-w-7xl mx-auto h-full ${activeTab === 'dashboard' ? 'p-0 md:p-0' : ''}`}>
-                  {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} />}
+                  {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} indicadores={indicadores} sincronizando={isSyncing} errorSync={syncError} />}
                   {activeTab === 'equipos' && renderEquipos()}
                   {activeTab === 'calendarios' && renderCalendarios()}
                 </div>

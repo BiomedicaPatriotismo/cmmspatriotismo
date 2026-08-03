@@ -61,13 +61,66 @@ Sube el archivo al repositorio y activa GitHub Pages.
 
 **Importante para desplegar:** después de subir el nuevo `Codigo.gs`, hay que crear una **nueva versión** de la implementación de Apps Script (Implementar → Gestionar implementaciones → Editar → Nueva versión), o el backend seguirá corriendo la lógica anterior y el folio se seguirá calculando solo en el navegador.
 
+## Integración Rev. 05 — Indicadores en el mismo libro + control de accesos
+
+| # | Cambio | Detalle |
+|---|---|---|
+| 13 | El dashboard de Indicadores leía un **CSV publicado en la web** (visible para cualquiera con la URL) de otro libro distinto al inventario | Nueva hoja **`Indicadores`** en el **mismo libro** del inventario. Los datos viajan en el mismo `getAll` (una sola llamada, una sola fuente). La hoja **se crea sola** con todos los encabezados la primera vez que se sincroniza; solo hay que capturar una fila por mes. Ya se puede **des-publicar** el CSV (Archivo → Compartir → Publicar en la web → Dejar de publicar) |
+| 14 | Cualquiera con la URL de la web app podía leer y escribir todo el inventario | **Control de acceso por PIN**: pantalla de inicio de sesión en el frontend, validación en el **servidor** (`CLAVES_ACCESO` en `Codigo.gs`). Un PIN por persona → el servidor resuelve el nombre a partir del PIN, así el cliente no puede suplantar a nadie |
+| 15 | No había manera de saber quién entraba (o intentaba entrar) al sistema | Nueva hoja **`Accesos`** (se crea sola): registra **cada intento** —permitido o denegado— con fecha/hora, resultado, evento (LOGIN / LECTURA / ESCRITURA), usuario, acción y navegador. Los PIN fallidos se guardan **enmascarados** (primer carácter + longitud), nunca completos |
+| 16 | La hoja `Auditoria` registraba el usuario que el navegador declaraba (falsificable) | Las altas y ediciones ahora registran al **usuario autenticado** resuelto por el servidor a partir del PIN |
+| 17 | `getAll` abría el libro de Sheets 5–6 veces por petición | `getLibro()` con caché por ejecución: se abre **una vez** (respuesta más rápida) |
+| 18 | Borrar el campo "Año" del dashboard o del calendario dejaba `NaN` y vaciaba todo | Los inputs de año ignoran valores no numéricos |
+| 19 | Cambiar Estatus/Motivo desde la ficha del equipo no revertía la pantalla si el guardado fallaba | Esos dos guardados rápidos ahora también hacen **rollback** |
+| 20 | La hoja `Indicadores` vacía dejaba el spinner de "Cargando indicadores..." girando para siempre | Estado propio de "Sin indicadores capturados" con instrucciones |
+| 21 | El histórico del dashboard dependía del orden de captura de las filas | Los meses se ordenan por **calendario** (enero → diciembre) sin importar el orden en la hoja |
+
+### Configuración de la Rev. 05
+
+1. **PINs** — En `Codigo.gs`, sección `CLAVES_ACCESO`, cambia los PIN de ejemplo
+   (`CAMBIAME-1234`...) por los reales, uno por persona:
+   ```javascript
+   var CLAVES_ACCESO = {
+     'mi-pin-secreto': 'Ing. Omar (Jefe Biomédica)',
+     'otro-pin':       'Técnico Biomédico 1'
+   };
+   ```
+   Los PIN viven **solo en el script** (tu cuenta de Google). El `index.html`
+   publicado en GitHub Pages nunca los contiene.
+2. **Hoja Indicadores** — No hay que crear nada a mano: la primera sincronización
+   la crea con sus 28 columnas (`mes`, `mp_cumplimiento`, `mttr`,
+   `downtime_*`, `presupuesto_*`, `ratio_mp`, `ratio_mc`, `reto1..5_titulo/desc/tipo`).
+   Captura una fila por mes con el mes en **minúsculas** (`enero`, `febrero`...).
+   También puedes ejecutar `inicializarIndicadores` desde el editor.
+   Si ya tienes datos en el CSV viejo, cópialos tal cual: las columnas son idénticas.
+3. **Desactivar seguridad para pruebas** — `SEGURIDAD_ACTIVA = false` restaura el
+   comportamiento abierto de la Rev. 04 (no recomendado en producción).
+4. **Nueva versión de la implementación** — igual que siempre: Implementar →
+   Gestionar implementaciones → Editar → **Nueva versión**. Sin este paso el
+   backend seguirá en Rev. 04 y el login fallará.
+
+### Alcance honesto de la seguridad
+
+- Lo que **sí** hace: nadie sin PIN puede leer ni escribir datos; todo intento
+  queda registrado con fecha, resultado y navegador; los nombres en Auditoría,
+  Bitácora y Accesos salen del PIN validado en servidor.
+- Lo que **no** puede hacer (limitación de Apps Script con acceso "Cualquier
+  usuario"): registrar la **dirección IP** ni la cuenta de Google del visitante —
+  Google no expone esos datos al script en este modo de despliegue. Si algún día
+  necesitas identidad Google real, habría que desplegar con acceso restringido a
+  cuentas del dominio, lo que rompería el acceso anónimo desde GitHub Pages.
+- El PIN viaja como parámetro de la petición (HTTPS). Es un control razonable
+  para un equipo interno; no sustituye una autenticación corporativa formal.
+
 ## Funciones nuevas
 
 - **Bitácora** (`Bitacora`): folio automático `MP-2026-0001`, técnico responsable, hallazgos, refacciones, tiempo de paro.
 - **Tecnovigilancia** (`Tecnovigilancia`): clasificación de evento, paciente involucrado, causa raíz, reporte COFEPRIS — alineado a NOM-240-SSA1-2012.
 - **Auditoría** (`Auditoria`): traza de altas y ediciones con usuario y fecha.
+- **Indicadores** (`Indicadores`): KPIs mensuales del dashboard (Rev. 05).
+- **Accesos** (`Accesos`): bitácora de accesos permitidos y denegados (Rev. 05).
 
-Las tres hojas se crean solas la primera vez que se usan.
+Todas estas hojas se crean solas la primera vez que se usan.
 
 ---
 
@@ -81,9 +134,11 @@ https://TU_URL/exec?action=ping
 
 | Resultado | Causa |
 |---|---|
-| `{"ok":true,...}` | Backend correcto |
+| `{"ok":true,...,"version":"Rev.05"}` | Backend correcto y actualizado |
+| `{"ok":true,...,"version":"Rev.04"}` | Falta crear **nueva versión** de la implementación |
 | Pantalla de login de Google | Acceso ≠ "Cualquier usuario" (paso 5) |
 | `Configura SPREADSHEET_ID` | Falta el paso 3 |
+| `ACCESO_DENEGADO` en la app | PIN incorrecto o no dado de alta en `CLAVES_ACCESO` (el intento queda en la hoja `Accesos`) |
 
 Si `?action=getAll` devuelve arreglos vacíos, verifica que las hojas se llamen exactamente **Propio**, **Comodato** y **Renta**.
 
