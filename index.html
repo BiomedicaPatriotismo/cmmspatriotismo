@@ -1038,6 +1038,304 @@
         };
 
         // ============================================================================
+        // [NEW-14] EXPEDIENTE DIGITAL DEL EQUIPO (Google Drive)
+        // ----------------------------------------------------------------------------
+        // Cada equipo tiene una carpeta en Drive ("Nombre del equipo + No. de
+        // inventario") con su manual y sus órdenes de servicio nombradas con
+        // prefijo + fecha (OSMP 2026-05-12, OSMC_20260311, ...). El backend la
+        // localiza, clasifica y devuelve el historial; el visor integrado trae
+        // el documento en base64, así el personal lo consulta sin necesitar
+        // permisos de Drive. Toda consulta queda registrada en "Accesos".
+        // ============================================================================
+        const TIPOS_ORDEN = {
+            OSMP: { label: 'Preventivo',  icono: 'fa-calendar-check', clase: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+            OSMC: { label: 'Correctivo',  icono: 'fa-screwdriver-wrench', clase: 'bg-red-100 text-red-800 border-red-300' },
+            OSI:  { label: 'Instalación', icono: 'fa-plug', clase: 'bg-blue-100 text-blue-800 border-blue-300' },
+            OSB:  { label: 'Baja',        icono: 'fa-box-archive', clase: 'bg-gray-200 text-gray-700 border-gray-300' }
+        };
+
+        const formatoPeso = (bytes) => {
+            const b = Number(bytes) || 0;
+            if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+            if (b >= 1024) return Math.round(b / 1024) + ' KB';
+            return b + ' B';
+        };
+
+        const ExpedienteEquipo = ({ equipo }) => {
+            const [docs, setDocs] = useState(null);
+            const [cargandoDocs, setCargandoDocs] = useState(true);
+            const [errorDocs, setErrorDocs] = useState(null);
+            const [filtroTipo, setFiltroTipo] = useState('TODAS');
+            // visor: { nombre, cargando } mientras descarga; luego { nombre, url, mime }
+            const [visor, setVisor] = useState(null);
+
+            const cargarExpediente = async () => {
+                if (!equipo.numeroInventario) {
+                    setErrorDocs('Este registro no tiene número de inventario; no es posible localizar su carpeta en Drive.');
+                    setCargandoDocs(false);
+                    return;
+                }
+                setCargandoDocs(true);
+                setErrorDocs(null);
+                try {
+                    const r = await jsonpConReintentos({
+                        action: 'getDocumentosEquipo',
+                        inventario: equipo.numeroInventario
+                    });
+                    setDocs(r);
+                } catch (err) {
+                    setErrorDocs(err.message || 'No se pudo consultar el expediente en Drive.');
+                } finally {
+                    setCargandoDocs(false);
+                }
+            };
+
+            useEffect(() => {
+                setDocs(null);
+                setFiltroTipo('TODAS');
+                cargarExpediente();
+                // Al desmontar, libera el blob del visor si quedó abierto
+                return () => setVisor(v => { if (v && v.url) URL.revokeObjectURL(v.url); return null; });
+            }, [equipo.numeroInventario]);
+
+            const abrirDocumento = async (archivo) => {
+                setVisor({ nombre: archivo.nombre, cargando: true });
+                try {
+                    // 60s de espera: los PDF escaneados pueden pesar varios MB
+                    const r = await jsonpRequest({ action: 'getArchivo', id: archivo.id }, 60000);
+                    if (r && r.ok && r.base64) {
+                        const bin = atob(r.base64);
+                        const bytes = new Uint8Array(bin.length);
+                        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                        const blob = new Blob([bytes], { type: r.mime || 'application/octet-stream' });
+                        setVisor({ nombre: r.nombre, url: URL.createObjectURL(blob), mime: r.mime || '' });
+                    } else {
+                        // Archivo demasiado grande para el visor: se abre en Drive
+                        setVisor(null);
+                        if (r && r.motivo) alert(r.motivo);
+                        window.open((r && r.url) || archivo.url, '_blank');
+                    }
+                } catch (err) {
+                    // Cualquier falla del visor degrada a abrir el archivo en Drive
+                    setVisor(null);
+                    window.open(archivo.url, '_blank');
+                }
+            };
+
+            const cerrarVisor = () => {
+                setVisor(v => { if (v && v.url) URL.revokeObjectURL(v.url); return null; });
+            };
+
+            const conteosPorTipo = useMemo(() => {
+                const c = { TODAS: 0, OSMP: 0, OSMC: 0, OSI: 0, OSB: 0 };
+                ((docs && docs.ordenes) || []).forEach(o => {
+                    c.TODAS++;
+                    if (c[o.tipo] !== undefined) c[o.tipo]++;
+                });
+                return c;
+            }, [docs]);
+
+            const ordenesVisibles = useMemo(() => {
+                const lista = (docs && docs.ordenes) || [];
+                return filtroTipo === 'TODAS' ? lista : lista.filter(o => o.tipo === filtroTipo);
+            }, [docs, filtroTipo]);
+
+            const FilaDocumento = ({ archivo, mostrarTipo }) => {
+                const t = TIPOS_ORDEN[archivo.tipo];
+                return (
+                    <tr className="border-b border-gray-50 hover:bg-blue-50/40 transition text-sm">
+                        {mostrarTipo && (
+                            <td className="p-3 whitespace-nowrap">
+                                <span className={`px-2.5 py-1 rounded-lg border font-bold text-[11px] uppercase tracking-wider ${t ? t.clase : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                    <i className={`fas ${t ? t.icono : 'fa-file'} mr-1.5`}></i>{t ? t.label : archivo.tipo}
+                                </span>
+                            </td>
+                        )}
+                        <td className="p-3 whitespace-nowrap font-bold text-gray-700">
+                            {archivo.fecha || <span className="text-gray-400 font-normal italic">Sin fecha</span>}
+                        </td>
+                        <td className="p-3 text-gray-600 max-w-[280px] truncate" title={archivo.nombre}>{archivo.nombre}</td>
+                        <td className="p-3 text-gray-400 text-xs whitespace-nowrap">{formatoPeso(archivo.peso)}</td>
+                        <td className="p-3 whitespace-nowrap text-right">
+                            <button onClick={() => abrirDocumento(archivo)}
+                                className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition text-xs font-bold shadow-sm">
+                                <i className="fas fa-eye"></i> Ver
+                            </button>
+                            <a href={archivo.url} target="_blank" rel="noopener noreferrer" title="Abrir en Google Drive"
+                                className="inline-flex items-center gap-1.5 ml-2 border border-gray-200 text-gray-500 px-3 py-1.5 rounded-lg hover:bg-gray-50 hover:text-gray-700 transition text-xs font-bold">
+                                <i className="fab fa-google-drive"></i>
+                            </a>
+                        </td>
+                    </tr>
+                );
+            };
+
+            return (
+                <div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                            <i className="fas fa-folder-open mr-2"></i>Expediente Digital · Historial de Mantenimientos
+                            {docs && docs.encontrada && (
+                                <span className="ml-2 text-[10px] normal-case font-medium text-gray-400">Carpeta: {docs.carpeta}</span>
+                            )}
+                        </p>
+                        <div className="flex flex-wrap gap-2 print-hidden">
+                            {docs && docs.encontrada && docs.carpetaUrl && (
+                                <a href={docs.carpetaUrl} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-2 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition shadow-sm font-medium text-sm">
+                                    <i className="fab fa-google-drive"></i> Abrir carpeta
+                                </a>
+                            )}
+                            <button onClick={cargarExpediente} disabled={cargandoDocs}
+                                className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition shadow-sm font-medium text-sm disabled:opacity-40">
+                                <i className={`fas fa-sync-alt ${cargandoDocs ? 'fa-spin' : ''}`}></i> Actualizar
+                            </button>
+                        </div>
+                    </div>
+
+                    {cargandoDocs && (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center text-gray-400 text-sm">
+                            <i className="fas fa-circle-notch fa-spin mr-2"></i> Consultando la carpeta del equipo en Google Drive...
+                        </div>
+                    )}
+
+                    {!cargandoDocs && errorDocs && (
+                        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg text-sm text-red-700">
+                            <p className="font-bold mb-1">No se pudo consultar el expediente</p>
+                            <p>{errorDocs}</p>
+                        </div>
+                    )}
+
+                    {!cargandoDocs && !errorDocs && docs && !docs.encontrada && (
+                        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg text-sm text-amber-800">
+                            <p className="font-bold mb-1"><i className="fas fa-folder-minus mr-2"></i>Carpeta no localizada en Drive</p>
+                            <p>{docs.mensaje}</p>
+                        </div>
+                    )}
+
+                    {!cargandoDocs && !errorDocs && docs && docs.encontrada && (
+                        <div className="space-y-4">
+                            {/* Manuales del equipo */}
+                            {docs.manuales.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wider mr-1"><i className="fas fa-book mr-1"></i> Manuales:</span>
+                                    {docs.manuales.map(m => (
+                                        <button key={m.id} onClick={() => abrirDocumento(m)} title={m.nombre}
+                                            className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition text-xs font-bold max-w-[260px]">
+                                            <i className="fas fa-book-open"></i><span className="truncate">{m.nombre}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Filtros por tipo de orden */}
+                            <div className="flex flex-wrap gap-2 print-hidden">
+                                {['TODAS', 'OSMP', 'OSMC', 'OSI', 'OSB'].map(t => {
+                                    const activo = filtroTipo === t;
+                                    const etiqueta = t === 'TODAS' ? 'Todas' : (TIPOS_ORDEN[t] ? TIPOS_ORDEN[t].label : t);
+                                    return (
+                                        <button key={t} onClick={() => setFiltroTipo(t)} disabled={t !== 'TODAS' && conteosPorTipo[t] === 0}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition disabled:opacity-30 disabled:cursor-not-allowed ${activo ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'}`}>
+                                            {etiqueta} <span className={activo ? 'text-blue-100' : 'text-gray-400'}>({conteosPorTipo[t]})</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Historial de órdenes de servicio */}
+                            <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="sticky top-0">
+                                            <tr className="bg-gray-50 text-gray-500 text-[11px] uppercase tracking-wider">
+                                                <th className="p-3 font-bold border-b">Tipo</th>
+                                                <th className="p-3 font-bold border-b">Fecha</th>
+                                                <th className="p-3 font-bold border-b">Orden de Servicio</th>
+                                                <th className="p-3 font-bold border-b">Peso</th>
+                                                <th className="p-3 font-bold border-b text-right">Documento</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {ordenesVisibles.length === 0 ? (
+                                                <tr><td colSpan="5" className="p-6 text-center text-gray-400 text-sm italic">
+                                                    {conteosPorTipo.TODAS === 0
+                                                        ? 'La carpeta no contiene órdenes de servicio con prefijo OSMP / OSMC / OSI / OSB.'
+                                                        : 'No hay órdenes de este tipo.'}
+                                                </td></tr>
+                                            ) : (
+                                                ordenesVisibles.map(o => <FilaDocumento key={o.id} archivo={o} mostrarTipo={true} />)
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* Otros documentos de la carpeta */}
+                            {docs.otros.length > 0 && (
+                                <details className="text-sm">
+                                    <summary className="cursor-pointer text-gray-500 font-medium hover:text-gray-700 select-none">
+                                        <i className="fas fa-paperclip mr-1"></i> Otros documentos de la carpeta ({docs.otros.length})
+                                    </summary>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {docs.otros.map(a => (
+                                            <button key={a.id} onClick={() => abrirDocumento(a)} title={a.nombre}
+                                                className="inline-flex items-center gap-2 bg-gray-50 text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition text-xs font-medium max-w-[260px]">
+                                                <i className="fas fa-file"></i><span className="truncate">{a.nombre}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </details>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Visor de documentos integrado */}
+                    {visor && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 print-hidden" onClick={cerrarVisor}>
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+                                onClick={(e) => e.stopPropagation()}>
+                                <div className="px-5 py-3 border-b border-gray-100 flex justify-between items-center gap-3 bg-gray-50">
+                                    <p className="font-bold text-gray-800 text-sm truncate" title={visor.nombre}>
+                                        <i className="fas fa-file-lines mr-2 text-blue-500"></i>{visor.nombre}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        {visor.url && (
+                                            <a href={visor.url} download={visor.nombre}
+                                                className="text-xs font-bold text-blue-600 border border-blue-200 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">
+                                                <i className="fas fa-download mr-1"></i> Descargar
+                                            </a>
+                                        )}
+                                        <button onClick={cerrarVisor} className="text-gray-400 hover:text-gray-700 text-xl font-bold px-2">✕</button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 bg-gray-100 flex items-center justify-center overflow-hidden">
+                                    {visor.cargando ? (
+                                        <div className="text-gray-500 text-sm flex flex-col items-center gap-3">
+                                            <i className="fas fa-circle-notch fa-spin text-3xl text-blue-500"></i>
+                                            Descargando documento del expediente...
+                                        </div>
+                                    ) : String(visor.mime).indexOf('image/') === 0 ? (
+                                        <img src={visor.url} alt={visor.nombre} className="max-w-full max-h-full object-contain" />
+                                    ) : String(visor.mime).indexOf('pdf') > -1 ? (
+                                        <iframe src={visor.url} title={visor.nombre} className="w-full h-full border-0"></iframe>
+                                    ) : (
+                                        <div className="text-center text-gray-500 text-sm p-8">
+                                            <i className="fas fa-file-circle-question text-4xl text-gray-300 mb-3"></i>
+                                            <p>Este formato no tiene vista previa integrada.</p>
+                                            <a href={visor.url} download={visor.nombre} className="text-blue-600 font-bold hover:underline mt-2 inline-block">
+                                                Descargar {visor.nombre}
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================================================
         // LÓGICA PRINCIPAL CMMS (INVENTARIO Y CALENDARIOS)
         // ============================================================================
         const CMMSHospitalario = () => {
@@ -1781,6 +2079,11 @@
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p><p className="font-medium">{selectedEquipo.nivelRiesgo || '-'}</p></div>
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta</p><p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p></div>
                       <div className="lg:col-span-3 mt-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p><p className="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">{selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}</p></div>
+
+                      {/* [NEW-14] EXPEDIENTE DIGITAL: historial de mantenimientos desde Drive */}
+                      <div className="lg:col-span-3 mt-6 pt-6 border-t-2 border-dashed border-gray-200">
+                        <ExpedienteEquipo equipo={selectedEquipo} />
+                      </div>
 
                       {/* ETIQUETA DE IDENTIFICACIÓN */}
                       <div className="lg:col-span-3 mt-6 pt-6 border-t-2 border-dashed border-gray-200">

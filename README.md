@@ -112,6 +112,40 @@ Sube el archivo al repositorio y activa GitHub Pages.
 - El PIN viaja como parámetro de la petición (HTTPS). Es un control razonable
   para un equipo interno; no sustituye una autenticación corporativa formal.
 
+## Integración Rev. 06 — Expediente digital del equipo (Google Drive)
+
+| # | Cambio | Detalle |
+|---|---|---|
+| 22 | El historial documental (manuales y órdenes de servicio) vivía solo en Drive, desconectado del CMMS | Nueva sección **"Expediente Digital · Historial de Mantenimientos"** en la ficha de cada equipo. El backend localiza en Drive la carpeta del equipo (nombrada "Nombre del equipo + No. de inventario"), clasifica su contenido y lo muestra: manuales, órdenes de servicio por tipo y fecha, y otros documentos |
+| 23 | Identificación de órdenes | Los archivos con prefijo **OSMP** (preventivo), **OSMC** (correctivo), **OSI** (instalación) y **OSB** (baja) se reconocen automáticamente; la **fecha** se extrae del nombre en orden año-mes-día con o sin separadores (`OSMP 2026-05-12`, `OSMC_20260311`, `OSI 2026 3 4`). El historial se ordena del más reciente al más antiguo y se puede **filtrar por tipo** |
+| 24 | Ver el documento requería permisos de Drive de cada persona | **Visor integrado**: al pulsar "Ver", el backend (que corre con tu cuenta) entrega el documento y se muestra dentro del CMMS (PDF e imágenes; los Google Docs se exportan a PDF). Archivos > 8 MB se abren en Drive. Cada consulta de expediente y de documento queda registrada en la hoja **`Accesos`** |
+| 25 | Búsqueda de la carpeta | Coincidencia con frontera numérica: buscar `PAT12` **no** abre la carpeta de `PAT123`. El resultado se cachea 10 min. Opcionalmente define `CARPETA_EQUIPOS_ID` en `Codigo.gs` (ID de la carpeta raíz que contiene todas las carpetas de equipos) para búsquedas más rápidas y sin falsos positivos |
+
+### Configuración de la Rev. 06
+
+1. **Autorizar Google Drive** — La Rev. 06 usa un permiso nuevo (lectura de
+   Drive). Tras pegar el `Codigo.gs`, ejecuta `pruebaDrive` desde el editor
+   (cambiando el inventario de ejemplo por uno real) y acepta la autorización.
+   **Sin este paso, el expediente fallará en la web app.**
+2. **Carpeta raíz (recomendado)** — Pega en `CARPETA_EQUIPOS_ID` el ID de la
+   carpeta que contiene todas las carpetas de equipos
+   (`drive.google.com/drive/folders/[ID]`). Si se deja vacío, se busca en todo tu Drive.
+3. **Nueva versión de la implementación** — como siempre. `?action=ping` debe
+   responder `"version":"Rev.06"`.
+
+### Convención de nombres esperada en Drive
+
+```
+📁 VENTILADOR MECANICO PAT123
+   ├── Manual de usuario Dräger.pdf        ← contiene "manual" → sección Manuales
+   ├── OSMP 2026-05-12.pdf                 ← preventivo, 12 may 2026
+   ├── OSMC_20260311 cambio de sensor.pdf  ← correctivo, 11 mar 2026
+   ├── OSI 2024-01-15.pdf                  ← instalación
+   └── Foto de placa.jpg                   ← "Otros documentos"
+```
+
+
+
 ## Funciones nuevas
 
 - **Bitácora** (`Bitacora`): folio automático `MP-2026-0001`, técnico responsable, hallazgos, refacciones, tiempo de paro.
