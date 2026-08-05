@@ -133,15 +133,27 @@ Sube el archivo al repositorio y activa GitHub Pages.
 3. **Nueva versión de la implementación** — como siempre. `?action=ping` debe
    responder `"version":"Rev.06"`.
 
+## Integración Rev. 07 — Nomenclatura extendida de órdenes
+
+| # | Cambio | Detalle |
+|---|---|---|
+| 26 | Las órdenes nombradas "OS-Tipo-fecha" no aparecían en el expediente | Se reconocen ambas nomenclaturas: los **prefijos cortos** (`OSMP`, `OSMC`, `OSI`, `OSB`, `OSA`) y el **formato largo** `OS-Preventivo-04-05-2026-15-15`, `OS-Baja-12-11-2025`, `OS-Instalacion-2025-06-17`, `OS-Correctivo-23-01-2026-12-11`, `OS-Asistencia-12-05-2026-12-50` (con o sin acento en "Instalación") |
+| 27 | Formatos de fecha mixtos | La fecha se acepta en **día-mes-año** (convención MX) o **año-mes-día**; la posición del año de 4 dígitos decide el orden. La **hora** final (`-15-15` → 15:15) es opcional y solo se toma si es una hora válida (evita confundirla con otros números del nombre). Dentro del mismo día, las órdenes se ordenan por hora |
+| 28 | Nuevo tipo de orden | **Asistencia** (código `OSA`, badge ámbar), con su propio filtro en el expediente |
+| 29 | Columna de peso | Eliminada de la tabla del expediente a petición del usuario |
+
 ### Convención de nombres esperada en Drive
 
 ```
 📁 VENTILADOR MECANICO PAT123
-   ├── Manual de usuario Dräger.pdf        ← contiene "manual" → sección Manuales
-   ├── OSMP 2026-05-12.pdf                 ← preventivo, 12 may 2026
-   ├── OSMC_20260311 cambio de sensor.pdf  ← correctivo, 11 mar 2026
-   ├── OSI 2024-01-15.pdf                  ← instalación
-   └── Foto de placa.jpg                   ← "Otros documentos"
+   ├── Manual de usuario Dräger.pdf           ← contiene "manual" → sección Manuales
+   ├── OSMP 2026-05-12.pdf                    ← preventivo (prefijo corto)
+   ├── OS-Preventivo-04-05-2026-15-15.pdf     ← preventivo, 4 may 2026, 15:15
+   ├── OS-Correctivo-23-01-2026-12-11.pdf     ← correctivo, 23 ene 2026, 12:11
+   ├── OS-Instalacion-2025-06-17.pdf          ← instalación, 17 jun 2025
+   ├── OS-Asistencia-12-05-2026-12-50.pdf     ← asistencia, 12 may 2026, 12:50
+   ├── OS-Baja-12-11-2025.pdf                 ← baja, 12 nov 2025
+   └── Foto de placa.jpg                      ← "Otros documentos"
 ```
 
 
