@@ -145,6 +145,35 @@
             }
         };
 
+        // ====================================================================
+        // [PERF] CACHÉ LOCAL DE DATOS (arranque instantáneo)
+        // --------------------------------------------------------------------
+        // Al abrir la app se pintan de inmediato los datos de la última
+        // sincronización guardada en este navegador, y el getAll corre en
+        // segundo plano para reemplazarlos ("stale-while-revalidate"). Se
+        // borra al cerrar sesión para no dejar datos en equipos compartidos.
+        // ====================================================================
+        const CACHE_LOCAL = {
+            guardar(datos) {
+                try {
+                    window.localStorage.setItem('cmms_cache', JSON.stringify({ t: Date.now(), datos }));
+                } catch (e) { /* cuota llena: la app funciona igual, solo sin arranque rápido */ }
+            },
+            leer() {
+                try {
+                    const raw = window.localStorage.getItem('cmms_cache');
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) { return null; }
+            },
+            limpiar() {
+                try { window.localStorage.removeItem('cmms_cache'); } catch (e) {}
+            }
+        };
+
+        // [PERF] Expedientes ya consultados en esta sesión: volver a la ficha
+        // de un equipo no vuelve a preguntar a Drive (el botón Actualizar sí).
+        const CACHE_EXPEDIENTES = new Map();
+
         // Normaliza Si/SI/Sí/sí/S/1/TRUE -> true. Evita depender de la
         // escritura exacta capturada en la hoja de cálculo.
         const esAfirmativo = (v) => {
@@ -1063,9 +1092,17 @@
             // visor: { nombre, cargando } mientras descarga; luego { nombre, url, mime }
             const [visor, setVisor] = useState(null);
 
-            const cargarExpediente = async () => {
+            const cargarExpediente = async (forzar) => {
                 if (!equipo.numeroInventario) {
                     setErrorDocs('Este registro no tiene número de inventario; no es posible localizar su carpeta en Drive.');
+                    setCargandoDocs(false);
+                    return;
+                }
+                // [PERF] Ficha ya consultada en esta sesión: respuesta inmediata
+                // sin volver a preguntar a Drive. "Actualizar" fuerza el refresco.
+                if (!forzar && CACHE_EXPEDIENTES.has(equipo.numeroInventario)) {
+                    setDocs(CACHE_EXPEDIENTES.get(equipo.numeroInventario));
+                    setErrorDocs(null);
                     setCargandoDocs(false);
                     return;
                 }
@@ -1074,9 +1111,11 @@
                 try {
                     const r = await jsonpConReintentos({
                         action: 'getDocumentosEquipo',
-                        inventario: equipo.numeroInventario
+                        inventario: equipo.numeroInventario,
+                        refrescar: forzar ? '1' : '0'   // salta también la caché del servidor
                     });
                     setDocs(r);
+                    if (r && r.encontrada) CACHE_EXPEDIENTES.set(equipo.numeroInventario, r);
                 } catch (err) {
                     setErrorDocs(err.message || 'No se pudo consultar el expediente en Drive.');
                 } finally {
@@ -1181,7 +1220,7 @@
                                     <i className="fab fa-google-drive"></i> Abrir carpeta
                                 </a>
                             )}
-                            <button onClick={cargarExpediente} disabled={cargandoDocs}
+                            <button onClick={() => cargarExpediente(true)} disabled={cargandoDocs}
                                 className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition shadow-sm font-medium text-sm disabled:opacity-40">
                                 <i className={`fas fa-sync-alt ${cargandoDocs ? 'fa-spin' : ''}`}></i> Actualizar
                             </button>
@@ -1374,16 +1413,28 @@
           };
           const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
 
-          // [SEC] Solo se sincroniza con una sesión activa; si el backend
-          // rechaza el PIN guardado (p. ej. fue revocado), la sesión se cierra
-          // y vuelve a aparecer la pantalla de acceso.
-          useEffect(() => { if (usuarioActivo) handleSyncSheets(); }, [usuarioActivo]);
+          // [SEC + PERF] Con sesión activa: primero se pintan los datos de la
+          // última sincronización guardada en este navegador (arranque
+          // instantáneo) y el getAll corre en segundo plano para actualizarlos.
+          useEffect(() => {
+            if (!usuarioActivo) return;
+            const cacheado = CACHE_LOCAL.leer();
+            if (cacheado && cacheado.datos) {
+              setEquipos(cacheado.datos.equipos || []);
+              setIndicadores(cacheado.datos.indicadores || []);
+              setBitacora(cacheado.datos.bitacora || []);
+              if (cacheado.datos.ultimaSync) setUltimaSync(cacheado.datos.ultimaSync + ' (guardado en este equipo)');
+            }
+            handleSyncSheets();
+          }, [usuarioActivo]);
 
           const esAccesoDenegado = (err) =>
             String((err && err.message) || '').indexOf('ACCESO_DENEGADO') > -1;
 
           const cerrarSesion = () => {
             SESION.limpiar();
+            CACHE_LOCAL.limpiar();       // [SEC] no dejar datos en equipos compartidos
+            CACHE_EXPEDIENTES.clear();
             setUsuarioActivo('');
             setEquipos([]);
             setIndicadores([]);
@@ -1483,6 +1534,14 @@
               setBitacora(data.bitacora || []);
               setIndicadores(data.indicadores || []); // [REV-05] misma hoja de cálculo
               setUltimaSync(data.sincronizado || new Date().toLocaleString('es-MX'));
+
+              // [PERF] Persistir para el arranque instantáneo de la próxima visita
+              CACHE_LOCAL.guardar({
+                equipos: consolidado,
+                indicadores: data.indicadores || [],
+                bitacora: data.bitacora || [],
+                ultimaSync: data.sincronizado || ''
+              });
 
               if (consolidado.length === 0) {
                 setSyncError('El backend respondió correctamente, pero no devolvió equipos. Verifica los nombres de las hojas (Propio, Comodato, Renta) y que tengan datos.');

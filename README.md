@@ -158,6 +158,17 @@ Sube el archivo al repositorio y activa GitHub Pages.
 
 
 
+## Integración Rev. 08 — Optimización de velocidad de carga
+
+| # | Cambio | Detalle |
+|---|---|---|
+| 30 | Al abrir la app había que esperar el `getAll` completo mirando pantalla vacía | **Arranque instantáneo**: los datos de la última sincronización quedan guardados en el navegador y se pintan de inmediato al entrar; el `getAll` corre en segundo plano y los reemplaza al terminar. La etiqueta "(guardado en este equipo)" indica cuándo se está viendo la copia local. La caché se **borra al cerrar sesión** (no deja datos en computadoras compartidas) |
+| 31 | Buscar la carpeta del equipo recorría las carpetas de Drive una por una | Con `CARPETA_EQUIPOS_ID` configurada, la búsqueda usa una **consulta filtrada por Google** (`"ID" in parents and title contains ...`): Drive devuelve solo las coincidencias en vez de iterar cientos de carpetas. De varios segundos a <1 s |
+| 32 | Volver a abrir la misma ficha repetía toda la consulta a Drive | Doble caché de expedientes: **en el navegador** (durante la sesión, respuesta inmediata) y **en el servidor** (CacheService, 5 min, compartida entre todos los usuarios). El botón **"Actualizar"** salta ambas para traer los documentos recién subidos |
+| 33 | Cada lectura escribía una fila en `Accesos` (~0.2–0.4 s por petición) | Nuevo flag `REGISTRAR_LECTURAS` en `Codigo.gs`. Con `true` (por defecto) se registra todo; con `false` solo logins, escrituras e intentos **denegados** — la vigilancia de quién entra se conserva, pero la sincronización es más ágil |
+
+**Nota:** hay una parte del tiempo de carga que no es optimizable desde el código: el "arranque en frío" de Google Apps Script (1–3 s cuando la web app lleva rato sin usarse) y el viaje JSONP. El arranque instantáneo del punto 30 existe precisamente para que ese tiempo ocurra en segundo plano y no se perciba.
+
 ## Funciones nuevas
 
 - **Bitácora** (`Bitacora`): folio automático `MP-2026-0001`, técnico responsable, hallazgos, refacciones, tiempo de paro.
