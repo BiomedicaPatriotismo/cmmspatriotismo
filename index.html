@@ -1051,14 +1051,8 @@
             OSMP: { label: 'Preventivo',  icono: 'fa-calendar-check', clase: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
             OSMC: { label: 'Correctivo',  icono: 'fa-screwdriver-wrench', clase: 'bg-red-100 text-red-800 border-red-300' },
             OSI:  { label: 'Instalación', icono: 'fa-plug', clase: 'bg-blue-100 text-blue-800 border-blue-300' },
-            OSB:  { label: 'Baja',        icono: 'fa-box-archive', clase: 'bg-gray-200 text-gray-700 border-gray-300' }
-        };
-
-        const formatoPeso = (bytes) => {
-            const b = Number(bytes) || 0;
-            if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
-            if (b >= 1024) return Math.round(b / 1024) + ' KB';
-            return b + ' B';
+            OSB:  { label: 'Baja',        icono: 'fa-box-archive', clase: 'bg-gray-200 text-gray-700 border-gray-300' },
+            OSA:  { label: 'Asistencia',  icono: 'fa-headset', clase: 'bg-amber-100 text-amber-800 border-amber-300' }
         };
 
         const ExpedienteEquipo = ({ equipo }) => {
@@ -1127,7 +1121,7 @@
             };
 
             const conteosPorTipo = useMemo(() => {
-                const c = { TODAS: 0, OSMP: 0, OSMC: 0, OSI: 0, OSB: 0 };
+                const c = { TODAS: 0, OSMP: 0, OSMC: 0, OSI: 0, OSB: 0, OSA: 0 };
                 ((docs && docs.ordenes) || []).forEach(o => {
                     c.TODAS++;
                     if (c[o.tipo] !== undefined) c[o.tipo]++;
@@ -1152,10 +1146,11 @@
                             </td>
                         )}
                         <td className="p-3 whitespace-nowrap font-bold text-gray-700">
-                            {archivo.fecha || <span className="text-gray-400 font-normal italic">Sin fecha</span>}
+                            {archivo.fecha
+                                ? (<span>{archivo.fecha}{archivo.hora && <span className="ml-1.5 text-gray-400 font-medium text-xs"><i className="far fa-clock mr-0.5"></i>{archivo.hora}</span>}</span>)
+                                : <span className="text-gray-400 font-normal italic">Sin fecha</span>}
                         </td>
-                        <td className="p-3 text-gray-600 max-w-[280px] truncate" title={archivo.nombre}>{archivo.nombre}</td>
-                        <td className="p-3 text-gray-400 text-xs whitespace-nowrap">{formatoPeso(archivo.peso)}</td>
+                        <td className="p-3 text-gray-600 max-w-[320px] truncate" title={archivo.nombre}>{archivo.nombre}</td>
                         <td className="p-3 whitespace-nowrap text-right">
                             <button onClick={() => abrirDocumento(archivo)}
                                 className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition text-xs font-bold shadow-sm">
@@ -1230,7 +1225,7 @@
 
                             {/* Filtros por tipo de orden */}
                             <div className="flex flex-wrap gap-2 print-hidden">
-                                {['TODAS', 'OSMP', 'OSMC', 'OSI', 'OSB'].map(t => {
+                                {['TODAS', 'OSMP', 'OSMC', 'OSI', 'OSB', 'OSA'].map(t => {
                                     const activo = filtroTipo === t;
                                     const etiqueta = t === 'TODAS' ? 'Todas' : (TIPOS_ORDEN[t] ? TIPOS_ORDEN[t].label : t);
                                     return (
@@ -1251,15 +1246,14 @@
                                                 <th className="p-3 font-bold border-b">Tipo</th>
                                                 <th className="p-3 font-bold border-b">Fecha</th>
                                                 <th className="p-3 font-bold border-b">Orden de Servicio</th>
-                                                <th className="p-3 font-bold border-b">Peso</th>
                                                 <th className="p-3 font-bold border-b text-right">Documento</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {ordenesVisibles.length === 0 ? (
-                                                <tr><td colSpan="5" className="p-6 text-center text-gray-400 text-sm italic">
+                                                <tr><td colSpan="4" className="p-6 text-center text-gray-400 text-sm italic">
                                                     {conteosPorTipo.TODAS === 0
-                                                        ? 'La carpeta no contiene órdenes de servicio con prefijo OSMP / OSMC / OSI / OSB.'
+                                                        ? 'La carpeta no contiene órdenes de servicio reconocibles (prefijo OSMP / OSMC / OSI / OSB / OSA, o formato "OS-Preventivo-...", "OS-Correctivo-...", "OS-Instalacion-...", "OS-Baja-...", "OS-Asistencia-...").'
                                                         : 'No hay órdenes de este tipo.'}
                                                 </td></tr>
                                             ) : (
