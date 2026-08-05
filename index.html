@@ -46,6 +46,56 @@
 
     <style>
         body { font-family: 'Inter', sans-serif; }
+
+        /* ================================================================
+           MEMBRETE INSTITUCIONAL HSAIP (impresión de formatos controlados)
+           Réplica del encabezado: logo | datos del hospital | título+código
+           ================================================================ */
+        .membrete-hsaip {
+            display: grid;
+            grid-template-columns: 170px 1fr 340px;
+            gap: 16px;
+            align-items: start;
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+        }
+        .membrete-logo { display: flex; align-items: flex-start; gap: 8px; }
+        .membrete-logo .barra { width: 10px; height: 92px; background: #8FAADC; border-radius: 2px; }
+        .membrete-logo .caja {
+            border: 3px solid #2E74B5; border-radius: 14px 14px 14px 0;
+            width: 74px; height: 58px; display: flex; align-items: center; justify-content: center;
+            color: #2E74B5; font-size: 30px; margin-bottom: 4px;
+        }
+        .membrete-logo .marca { font-family: Arial, sans-serif; color: #2E74B5; line-height: 1.05; }
+        .membrete-logo .marca .h1 { font-size: 13px; }
+        .membrete-logo .marca .h2 { font-size: 16px; font-weight: 700; }
+        .membrete-logo .marca .h3 { font-size: 9px; letter-spacing: 3px; font-weight: 600; }
+        .membrete-logo img { max-height: 95px; max-width: 165px; object-fit: contain; }
+        .membrete-datos { font-family: Arial, sans-serif; font-size: 12px; color: #2E74B5; line-height: 1.45; }
+        .membrete-datos .razon { font-weight: 700; color: #1F4687; }
+        .membrete-titulo { text-align: right; font-family: Arial, sans-serif; }
+        .membrete-titulo h1 {
+            color: #2E74B5; font-weight: 800; font-size: 21px; line-height: 1.15;
+            text-transform: uppercase; margin: 0 0 2px 0; text-align: center;
+        }
+        .membrete-titulo .codigo {
+            font-family: 'Courier New', monospace; color: #2E74B5; font-weight: 700;
+            font-size: 13px; letter-spacing: 1px; text-align: center; margin-bottom: 6px;
+        }
+        .membrete-campo { display: flex; justify-content: flex-end; gap: 10px; font-size: 13px; margin-top: 2px; }
+        .membrete-campo span { color: #000; }
+        .membrete-campo strong { min-width: 110px; text-align: left; color: #000; }
+
+        /* Formato impreso de revisión semanal (FOR-INB-008) */
+        .tabla-formato { width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 9px; }
+        .tabla-formato th, .tabla-formato td { border: 1px solid #000; padding: 2px 4px; }
+        .tabla-formato th { background: #D9E2F3 !important; font-weight: 700; text-align: center; }
+        .tabla-formato td.centro { text-align: center; font-weight: 700; }
+        .leyenda-controlado {
+            text-align: center; font-family: Arial, sans-serif; font-size: 8px; font-weight: 700;
+            border: 1px solid #000; padding: 3px; margin-top: 8px;
+        }
+        .salto-pagina { page-break-before: always; }
         
         /* Estilos de Impresión */
         @media print {
@@ -980,6 +1030,107 @@
         };
 
         // ============================================================================
+        // [REV-09] MEMBRETE INSTITUCIONAL PARA IMPRESIÓN DE FORMATOS
+        // ----------------------------------------------------------------------------
+        // Réplica del encabezado oficial: logo | datos del hospital | título + código
+        // de documento controlado + campos variables (EQUIPO, ÁREA, MES...).
+        // Si subes el logotipo real al repositorio (p. ej. "logo-hsaip.png"),
+        // escribe su ruta en LOGO_HSAIP_URL y sustituirá a la versión dibujada.
+        // ============================================================================
+        const LOGO_HSAIP_URL = '';   // p. ej. 'logo-hsaip.png'
+
+        const MembreteHSAIP = ({ titulo, codigo, campos }) => (
+            <div className="membrete-hsaip">
+                <div className="membrete-logo">
+                    {LOGO_HSAIP_URL ? (
+                        <img src={LOGO_HSAIP_URL} alt="Hospital San Ángel Inn Patriotismo" />
+                    ) : (
+                        <React.Fragment>
+                            <div className="barra"></div>
+                            <div>
+                                <div className="caja"><i className="fas fa-hand-sparkles"></i></div>
+                                <div className="marca">
+                                    <div className="h1">Hospital<sup>®</sup></div>
+                                    <div className="h2">San Ángel Inn</div>
+                                    <div className="h3">PATRIOTISMO</div>
+                                </div>
+                            </div>
+                        </React.Fragment>
+                    )}
+                </div>
+                <div className="membrete-datos">
+                    <p className="razon">Centro Hospitalario Patriotismo, S.A. de C.V.</p>
+                    <p>Av. Patriotismo No. 67 Col. San Juan, Alcaldía Benito Juárez</p>
+                    <p>C.P. 03730, Ciudad de México</p>
+                    <p>Teléfono (55) 47 70 48 70</p>
+                    <p>www.hospitalsanangelinn.mx</p>
+                    <p>Lic. Sanitaria: 16-AM-09-014-0006</p>
+                </div>
+                <div className="membrete-titulo">
+                    <h1>{titulo}</h1>
+                    <p className="codigo">{codigo}</p>
+                    {(campos || []).map(([etiqueta, valor]) => (
+                        <div className="membrete-campo" key={etiqueta}>
+                            <span>{etiqueta}:</span><strong>{valor}</strong>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
+        // ============================================================================
+        // [REV-09] PROGRAMA DE REVISIÓN SEMANAL (Calendario FOR-INB-008)
+        // ----------------------------------------------------------------------------
+        // Define qué áreas se revisan a diario y cuáles un día fijo por semana
+        // (0=Domingo ... 6=Sábado). La detección es por fragmento de texto sin
+        // acentos sobre el nombre del área del inventario; si un área no
+        // coincide, el módulo permite elegir la frecuencia a mano.
+        // ============================================================================
+        const PROGRAMA_REVISION = {
+            diarias: ['QUIROFANO', 'QX', 'CEYE', 'C.E.Y.E', 'HEMODINAMIA', 'HEMO'],
+            porDia: {
+                0: ['UTIA', 'UTI ', 'IMAGEN', 'IMAGENOLOGIA'],
+                1: ['LABORATORIO', 'LABO', '5TO', '5°', 'QUINTO'],
+                2: ['TOCO'],
+                3: ['URGENCIA', 'URG', 'RESPIRATORIA', 'T.RESP'],
+                4: ['ENDOSCOP', 'ENDO', '4TO', '4°', 'CUARTO'],
+                5: ['CUNERO', '2DO', '2°', 'SEGUNDO'],
+                6: ['UCIN', 'UCI']
+            }
+        };
+
+        const normalizarTexto = (t) => String(t || '')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase().trim();
+
+        /** Devuelve 'D' (diaria), 0-6 (día de la semana) o null si no coincide. */
+        const detectarFrecuenciaArea = (area) => {
+            const a = normalizarTexto(area);
+            if (!a) return null;
+            if (PROGRAMA_REVISION.diarias.some(f => a.includes(normalizarTexto(f)))) return 'D';
+            for (const dia of Object.keys(PROGRAMA_REVISION.porDia)) {
+                if (PROGRAMA_REVISION.porDia[dia].some(f => a.includes(normalizarTexto(f)))) return parseInt(dia, 10);
+            }
+            return null;
+        };
+
+        const NOMBRES_DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const LETRAS_DIAS = ['D', 'L', 'M', 'Mi', 'J', 'V', 'S'];
+        const NOMBRES_MESES_LARGOS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+        /** Días del mes (yyyy-MM) que tocan según la frecuencia elegida. */
+        const diasProgramados = (mesStr, frecuencia) => {
+            const [anio, mes] = String(mesStr || '').split('-').map(n => parseInt(n, 10));
+            if (!anio || !mes) return [];
+            const total = new Date(anio, mes, 0).getDate();
+            const dias = [];
+            for (let d = 1; d <= total; d++) {
+                if (frecuencia === 'D' || new Date(anio, mes - 1, d).getDay() === frecuencia) dias.push(d);
+            }
+            return dias;
+        };
+
+        // ============================================================================
         // [SEC] PANTALLA DE ACCESO
         // ----------------------------------------------------------------------------
         // El PIN NO se valida aquí (el HTML es público en GitHub Pages y cualquiera
@@ -1384,6 +1535,16 @@
           // [SEC] Usuario de la sesión activa; el nombre lo resuelve el backend
           // a partir del PIN, nunca lo declara el cliente.
           const [usuarioActivo, setUsuarioActivo] = useState(SESION.usuario);
+          // [REV-09] Módulo de Mantenimientos Predictivos (revisión rutinaria)
+          const [predMes, setPredMes] = useState(() => {
+            const h = new Date();
+            return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
+          });
+          const [predArea, setPredArea] = useState('');
+          const [predOrigen, setPredOrigen] = useState('Todos');
+          const [predFrecuencia, setPredFrecuencia] = useState('D');
+          const [predDatos, setPredDatos] = useState({});   // inventario -> { dias:{1:'OK'}, obs }
+          const [predCargando, setPredCargando] = useState(false);
           // Técnico responsable: se adjunta a cada folio de bitácora (trazabilidad)
           const [tecnicoActivo, setTecnicoActivo] = useState(() => {
             try { return window.localStorage.getItem('cmms_tecnico') || ''; } catch (e) { return ''; }
@@ -1815,6 +1976,324 @@
             return null;
           };
 
+          // ==================================================================
+          // [REV-09] MANTENIMIENTOS PREDICTIVOS — lógica
+          // ==================================================================
+
+          const areasPredictivos = useMemo(() => {
+            const base = predOrigen === 'Todos' ? equipos : equipos.filter(e => e.origen === predOrigen);
+            return Array.from(new Set(base.map(e => e.ubicacion).filter(u => u && u.trim() !== '')))
+              .sort((a, b) => a.localeCompare(b, 'es'));
+          }, [equipos, predOrigen]);
+
+          const equiposPredictivos = useMemo(() => {
+            if (!predArea) return [];
+            return equipos
+              .filter(e => e.ubicacion === predArea && (predOrigen === 'Todos' || e.origen === predOrigen))
+              .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es'));
+          }, [equipos, predArea, predOrigen]);
+
+          // Al cambiar de área, propone la frecuencia del programa semanal
+          useEffect(() => {
+            if (!predArea) return;
+            const f = detectarFrecuenciaArea(predArea);
+            setPredFrecuencia(f === null ? 'D' : f);
+          }, [predArea]);
+
+          // Carga las marcas guardadas del mes+área
+          useEffect(() => {
+            if (!predArea || !predMes || !usuarioActivo) { setPredDatos({}); return; }
+            let cancelado = false;
+            (async () => {
+              setPredCargando(true);
+              try {
+                const r = await jsonpConReintentos({ action: 'getPredictivos', mes: predMes, area: predArea });
+                if (cancelado) return;
+                const mapa = {};
+                (r.predictivos || []).forEach(p => { mapa[p.inventario] = { dias: p.dias || {}, obs: p.obs || '' }; });
+                setPredDatos(mapa);
+              } catch (err) {
+                if (cancelado) return;
+                if (esAccesoDenegado(err)) { cerrarSesion(); return; }
+                setSyncError('No se pudieron cargar las revisiones: ' + err.message);
+              } finally {
+                if (!cancelado) setPredCargando(false);
+              }
+            })();
+            return () => { cancelado = true; };
+          }, [predArea, predMes, usuarioActivo]);
+
+          const guardarPredictivo = (equipo, cambios) => jsonpConReintentos({
+            action: 'save',
+            payload: JSON.stringify({
+              action: 'predictivo',
+              mes: predMes,
+              area: predArea,
+              data: {
+                inventario: equipo.numeroInventario,
+                nombre: equipo.nombre || '',
+                marca: equipo.marca || '',
+                modelo: equipo.modelo || '',
+                serie: equipo.numeroSerie || '',
+                ...cambios
+              }
+            })
+          });
+
+          /** Clic en una celda-día: vacío -> ✓ OK -> ✗ Falla -> vacío. */
+          const ciclarMarcaPredictivo = (equipo, dia) => {
+            const inv = equipo.numeroInventario;
+            if (!inv) { setSyncError('El equipo no tiene número de inventario; no se puede registrar su revisión.'); return; }
+            const actual = ((predDatos[inv] || {}).dias || {})[dia] || '';
+            const siguiente = actual === '' ? 'OK' : (actual === 'OK' ? 'F' : '');
+            const previo = predDatos;
+            // Optimista: se marca de inmediato y se revierte si falla el guardado
+            setPredDatos(prev => {
+              const fila = prev[inv] || { dias: {}, obs: '' };
+              const dias = { ...fila.dias };
+              if (siguiente) dias[dia] = siguiente; else delete dias[dia];
+              return { ...prev, [inv]: { ...fila, dias } };
+            });
+            guardarPredictivo(equipo, { dia, valor: siguiente }).catch(err => {
+              setPredDatos(previo);
+              if (esAccesoDenegado(err)) { cerrarSesion(); return; }
+              setSyncError('No se guardó la marca de revisión: ' + err.message);
+            });
+          };
+
+          const editarObsPredictivo = (inv, texto) => {
+            setPredDatos(prev => ({ ...prev, [inv]: { dias: (prev[inv] || {}).dias || {}, obs: texto } }));
+          };
+
+          const guardarObsPredictivo = (equipo, texto) => {
+            if (!equipo.numeroInventario) return;
+            guardarPredictivo(equipo, { obs: texto }).catch(err => {
+              if (esAccesoDenegado(err)) { cerrarSesion(); return; }
+              setSyncError('No se guardó la observación: ' + err.message);
+            });
+          };
+
+          const renderPredictivos = () => {
+            const [anioP, mesP] = predMes.split('-').map(n => parseInt(n, 10));
+            const diasPred = diasProgramados(predMes, predFrecuencia);
+            const etiquetaMes = (NOMBRES_MESES_LARGOS[(mesP || 1) - 1] || '') + ' ' + (anioP || '');
+            const bloquesDias = [];
+            for (let i = 0; i < diasPred.length; i += 16) bloquesDias.push(diasPred.slice(i, i + 16));
+
+            const marcaDe = (inv, d) => ((predDatos[inv] || {}).dias || {})[d] || '';
+            const totalMarcas = equiposPredictivos.reduce((acc, eq) =>
+              acc + diasPred.filter(d => marcaDe(eq.numeroInventario, d)).length, 0);
+            const totalFallas = equiposPredictivos.reduce((acc, eq) =>
+              acc + diasPred.filter(d => marcaDe(eq.numeroInventario, d) === 'F').length, 0);
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
+                <BannerEstado />
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print-hidden">
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <i className="fas fa-clipboard-check text-blue-600"></i> Mantenimientos Predictivos
+                    <span className="text-sm font-medium text-gray-400 mt-1">Revisión rutinaria · FOR-INB-008</span>
+                  </h2>
+                  <div className="flex gap-2">
+                    <button onClick={() => window.print()} disabled={!predArea}
+                      className="flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition shadow-sm font-medium text-sm disabled:opacity-40">
+                      <i className="fas fa-print"></i> Imprimir formato
+                    </button>
+                  </div>
+                </div>
+
+                {/* Controles */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap items-center gap-4 print-hidden">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Mes:</label>
+                    <input type="month" value={predMes} onChange={(e) => e.target.value && setPredMes(e.target.value)}
+                      className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-bold" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Equipo:</label>
+                    <select value={predOrigen} onChange={(e) => setPredOrigen(e.target.value)}
+                      className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                      {['Todos', 'Propio', 'Comodato', 'Renta'].map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+                    <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i>Área:</label>
+                    <select value={predArea} onChange={(e) => setPredArea(e.target.value)}
+                      className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                      <option value="">— Selecciona un área —</option>
+                      {areasPredictivos.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase" title="Según el Calendario de Revisiones Semanales; puedes ajustarla">Frecuencia:</label>
+                    <select value={String(predFrecuencia)} onChange={(e) => setPredFrecuencia(e.target.value === 'D' ? 'D' : parseInt(e.target.value, 10))}
+                      className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                      <option value="D">Diaria</option>
+                      {NOMBRES_DIAS.map((n, i) => <option key={i} value={i}>{n} (semanal)</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tabla interactiva (pantalla) */}
+                {!predArea ? (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center text-gray-400 print-hidden">
+                    <i className="fas fa-map-marker-alt text-5xl text-gray-200 mb-4"></i>
+                    <p className="font-medium">Selecciona el mes y el área para ver el listado de equipos a revisar.</p>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50/60">
+                      <p className="text-sm font-bold text-gray-700">
+                        {predArea} · {etiquetaMes}
+                        <span className="ml-3 font-medium text-gray-400">{equiposPredictivos.length} equipos · {diasPred.length} días programados</span>
+                      </p>
+                      <div className="flex items-center gap-4 text-xs font-medium text-gray-500">
+                        {predCargando && <span><i className="fas fa-circle-notch fa-spin mr-1 text-blue-500"></i> Cargando marcas...</span>}
+                        <span><span className="inline-block w-4 h-4 rounded bg-emerald-100 text-emerald-700 text-center font-bold mr-1">✓</span>{totalMarcas - totalFallas} bien</span>
+                        <span><span className="inline-block w-4 h-4 rounded bg-red-100 text-red-600 text-center font-bold mr-1">✗</span>{totalFallas} con falla</span>
+                        <span className="text-gray-400">Clic en la celda: vacío → ✓ → ✗ → vacío</span>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
+                      <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-gray-100 text-gray-500 uppercase tracking-wider text-[10px]">
+                            <th className="p-2 font-bold border-b sticky left-0 bg-gray-100">Equipo</th>
+                            <th className="p-2 font-bold border-b">Marca</th>
+                            <th className="p-2 font-bold border-b">Modelo</th>
+                            <th className="p-2 font-bold border-b">Serie</th>
+                            {diasPred.map(d => (
+                              <th key={d} className="p-1 font-bold border-b text-center min-w-[34px]">
+                                <div>{d}</div>
+                                <div className="text-gray-400 font-medium">{LETRAS_DIAS[new Date(anioP, mesP - 1, d).getDay()]}</div>
+                              </th>
+                            ))}
+                            <th className="p-2 font-bold border-b min-w-[220px]">Observaciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {equiposPredictivos.length === 0 ? (
+                            <tr><td colSpan={5 + diasPred.length} className="p-8 text-center text-gray-400 italic">No hay equipos registrados en esta área.</td></tr>
+                          ) : equiposPredictivos.map(eq => {
+                            const inv = eq.numeroInventario;
+                            return (
+                              <tr key={eq.id} className="border-b border-gray-50 hover:bg-blue-50/30">
+                                <td className="p-2 sticky left-0 bg-white font-bold text-gray-700 max-w-[220px] truncate" title={eq.nombre}>
+                                  {eq.nombre}
+                                  <span className="block text-[10px] font-medium text-gray-400">{inv}</span>
+                                </td>
+                                <td className="p-2 text-gray-500">{eq.marca}</td>
+                                <td className="p-2 text-gray-500">{eq.modelo}</td>
+                                <td className="p-2 text-gray-500">{eq.numeroSerie}</td>
+                                {diasPred.map(d => {
+                                  const m = marcaDe(inv, d);
+                                  return (
+                                    <td key={d} className="p-0 text-center border-l border-gray-50">
+                                      <button onClick={() => ciclarMarcaPredictivo(eq, d)} title={`Día ${d}: ${m === 'OK' ? 'Revisado, bien' : m === 'F' ? 'Con falla' : 'Sin revisar'}`}
+                                        className={`w-full h-9 text-sm font-bold transition ${
+                                          m === 'OK' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                          : m === 'F' ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                                          : 'text-gray-300 hover:bg-blue-50'}`}>
+                                        {m === 'OK' ? '✓' : m === 'F' ? '✗' : '·'}
+                                      </button>
+                                    </td>
+                                  );
+                                })}
+                                <td className="p-1">
+                                  <input type="text" value={(predDatos[inv] || {}).obs || ''}
+                                    onChange={(e) => editarObsPredictivo(inv, e.target.value)}
+                                    onBlur={(e) => guardarObsPredictivo(eq, e.target.value)}
+                                    placeholder="Observaciones..."
+                                    className="w-full py-1.5 px-2 border border-gray-200 rounded text-xs bg-gray-50 outline-none focus:ring-1 focus:ring-blue-400" />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Formato impreso FOR-INB-008 (solo al imprimir) */}
+                {predArea && (
+                  <div className="hidden print-block">
+                    {bloquesDias.map((bloque, idx) => (
+                      <div key={idx} className={idx > 0 ? 'salto-pagina' : ''}>
+                        <MembreteHSAIP
+                          titulo="Programa de Revisión Semanal"
+                          codigo="HSAIP-FOR-INB-008 Rev. 01"
+                          campos={[
+                            ['EQUIPO', predOrigen],
+                            ['ÁREA', predArea],
+                            ['MES', etiquetaMes]
+                          ]}
+                        />
+                        <table className="tabla-formato">
+                          <thead>
+                            <tr>
+                              <th style={{width: '22%'}}>Equipo</th>
+                              <th style={{width: '12%'}}>Marca</th>
+                              <th style={{width: '12%'}}>Modelo</th>
+                              <th style={{width: '12%'}}>Serie</th>
+                              {bloque.map(d => <th key={d}>{d}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {equiposPredictivos.map(eq => (
+                              <tr key={eq.id}>
+                                <td>{eq.nombre}</td>
+                                <td>{eq.marca}</td>
+                                <td>{eq.modelo}</td>
+                                <td>{eq.numeroSerie}</td>
+                                {bloque.map(d => {
+                                  const m = marcaDe(eq.numeroInventario, d);
+                                  return <td key={d} className="centro">{m === 'OK' ? '✓' : m === 'F' ? '✗' : ''}</td>;
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        {/* Registro de Revisión (firmas por día del bloque) */}
+                        <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '10px', margin: '10px 0 3px'}}>Registro de Revisión</p>
+                        <table className="tabla-formato" style={{width: '60%'}}>
+                          <thead>
+                            <tr><th style={{width: '30%'}}>DÍA</th><th style={{width: '35%'}}>ÁREA</th><th style={{width: '35%'}}>BIOMÉDICA</th></tr>
+                          </thead>
+                          <tbody>
+                            {bloque.map(d => (
+                              <tr key={d}>
+                                <td className="centro">{String(d).padStart(2, '0')}/{String(mesP).padStart(2, '0')}/{anioP}</td>
+                                <td>&nbsp;</td>
+                                <td>&nbsp;</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        {/* Observaciones */}
+                        <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '10px', margin: '10px 0 3px'}}>Observaciones</p>
+                        <div style={{border: '1px solid #000', minHeight: '70px', padding: '4px', fontFamily: 'Arial', fontSize: '9px'}}>
+                          {equiposPredictivos
+                            .filter(eq => ((predDatos[eq.numeroInventario] || {}).obs || '').trim() !== '')
+                            .map(eq => (
+                              <p key={eq.id} style={{margin: '0 0 2px'}}>
+                                <strong>{eq.nombre} ({eq.numeroInventario}):</strong> {(predDatos[eq.numeroInventario] || {}).obs}
+                              </p>
+                            ))}
+                        </div>
+
+                        <div className="leyenda-controlado">DOCUMENTO CONTROLADO. PROHIBIDA SU REPRODUCCIÓN PARCIAL O TOTAL NO AUTORIZADA</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          };
+
           const renderCalendarios = () => (
               <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
                   <BannerEstado />
@@ -1863,12 +2342,18 @@
                           </div>
                       </div>
 
-                      <div className="hidden print-block p-6 text-center border-b border-gray-200 text-slate-800">
-                          <h2 className="text-3xl font-bold mb-2">Calendario de Mantenimiento Preventivo</h2>
-                          <p className="text-lg">
-                              Año: <strong>{calendarYear}</strong> | Categoría: <strong>{inventarioTab}</strong> | Área: <strong>{filterUbicacionCal}</strong>
-                              {filterMesCal !== 'Todos' && <span> | Mes Programado: <strong>{mesesAbreviados[parseInt(filterMesCal)]}</strong></span>}
-                          </p>
+                      {/* [REV-09] Membrete institucional: solo visible al imprimir.
+                          EQUIPO y ÁREA se actualizan según lo que se mande a imprimir. */}
+                      <div className="hidden print-block p-4 text-slate-800">
+                          <MembreteHSAIP
+                              titulo="Programa Anual de Mantenimiento Preventivo"
+                              codigo="HSAIP-FOR-INB-007 Rev. 01"
+                              campos={[
+                                  ['EQUIPO', inventarioTab],
+                                  ['ÁREA', filterUbicacionCal === 'Todos' ? 'Todas' : filterUbicacionCal],
+                                  ['AÑO', String(calendarYear) + (filterMesCal !== 'Todos' ? ' · ' + mesesAbreviados[parseInt(filterMesCal)] : '')]
+                              ]}
+                          />
                       </div>
 
                       <div className="overflow-x-auto p-4">
@@ -2257,6 +2742,7 @@
                   <button onClick={() => {setActiveTab('dashboard'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-columns w-5 text-center"></i> Dashboard</button>
                   <button onClick={() => {setActiveTab('equipos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'equipos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-stethoscope w-5 text-center"></i> Inventario</button>
                   <button onClick={() => {setActiveTab('calendarios'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'calendarios' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="far fa-calendar-alt w-5 text-center"></i> Calendarios</button>
+                  <button onClick={() => {setActiveTab('predictivos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'predictivos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-clipboard-check w-5 text-center"></i> Predictivos</button>
                 </nav>
 
                 {/* [SEC] Sesión activa: nombre resuelto por el backend + salida */}
@@ -2279,6 +2765,7 @@
                   {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} indicadores={indicadores} sincronizando={isSyncing} errorSync={syncError} />}
                   {activeTab === 'equipos' && renderEquipos()}
                   {activeTab === 'calendarios' && renderCalendarios()}
+                  {activeTab === 'predictivos' && renderPredictivos()}
                 </div>
               </main>
 

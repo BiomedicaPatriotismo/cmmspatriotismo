@@ -169,6 +169,18 @@ Sube el archivo al repositorio y activa GitHub Pages.
 
 **Nota:** hay una parte del tiempo de carga que no es optimizable desde el código: el "arranque en frío" de Google Apps Script (1–3 s cuando la web app lleva rato sin usarse) y el viaje JSONP. El arranque instantáneo del punto 30 existe precisamente para que ese tiempo ocurra en segundo plano y no se perciba.
 
+## Integración Rev. 09 — Membrete oficial + módulo de Mantenimientos Predictivos
+
+| # | Cambio | Detalle |
+|---|---|---|
+| 34 | La impresión del calendario llevaba un encabezado genérico | **Membrete institucional** replicado del formato oficial (logo, datos del hospital, título "PROGRAMA ANUAL DE MANTENIMIENTO PREVENTIVO", código `HSAIP-FOR-INB-007 Rev. 01`). Los campos **EQUIPO** (Propio/Comodato/Renta) y **ÁREA** se actualizan solos según lo que se mande a imprimir. Solo aparece al imprimir; en pantalla no estorba |
+| 35 | Logotipo | Mientras no se suba el logo real, se dibuja una versión aproximada con CSS. Para usar el oficial: sube `logo-hsaip.png` al repositorio y escribe la ruta en `LOGO_HSAIP_URL` (inicio del script de `index.html`) |
+| 36 | Nuevo módulo lateral **"Predictivos"** (revisiones rutinarias FOR-INB-008) | Se elige **mes + área** (y opcionalmente Propio/Comodato/Renta) y aparece el listado de equipos del área con una columna por **día programado**. Clic en la celda: vacío → **✓** (revisado, bien) → **✗** (con falla) → vacío. Observaciones por equipo. Todo se guarda al instante en la nueva hoja **`Predictivos`** (una fila por mes+área+equipo, columnas D1–D31), con usuario autenticado y multi-usuario protegido por LockService |
+| 37 | Días según el calendario de revisiones | El módulo trae precargado el **Calendario de Revisiones Semanales**: Quirófano, CEyE y Hemodinamia **diarias**; el resto un día fijo por semana (Dom: UTIA/Imagen · Lun: Laboratorio/5° · Mar: Toco · Mié: Urgencias/T. Respiratoria · Jue: Endoscopia/4° · Vie: Cuneros/2° · Sáb: UCIN). La frecuencia se detecta por el nombre del área y **se puede ajustar a mano** si el nombre en el inventario no coincide. El programa es editable en la constante `PROGRAMA_REVISION` de `index.html` |
+| 38 | Impresión en el formato oficial | El botón "Imprimir formato" genera el FOR-INB-008 fiel al archivo de Excel: membrete + tabla Equipo/Marca/Modelo/Serie con los días del periodo (las áreas diarias se dividen en bloques de **16 días por página**, como las hojas "QX" y "QX (2)" del original), tabla **"Registro de Revisión"** (DÍA/ÁREA/BIOMÉDICA para firmas), bloque de **Observaciones** y leyenda "DOCUMENTO CONTROLADO..." |
+
+**Para desplegar:** `Codigo.gs` nuevo → **nueva versión** de la implementación (ping = `Rev.09`) → subir `index.html`. La hoja `Predictivos` se crea sola con la primera marca. Sin permisos nuevos.
+
 ## Funciones nuevas
 
 - **Bitácora** (`Bitacora`): folio automático `MP-2026-0001`, técnico responsable, hallazgos, refacciones, tiempo de paro.
@@ -176,6 +188,7 @@ Sube el archivo al repositorio y activa GitHub Pages.
 - **Auditoría** (`Auditoria`): traza de altas y ediciones con usuario y fecha.
 - **Indicadores** (`Indicadores`): KPIs mensuales del dashboard (Rev. 05).
 - **Accesos** (`Accesos`): bitácora de accesos permitidos y denegados (Rev. 05).
+- **Predictivos** (`Predictivos`): marcas de revisión rutinaria por mes/área/equipo, columnas D1–D31 (Rev. 09).
 
 Todas estas hojas se crean solas la primera vez que se usan.
 
