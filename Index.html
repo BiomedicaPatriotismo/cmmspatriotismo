@@ -1,0 +1,2697 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediCMMS - Mantenimiento e Indicadores</title>
+    
+    <!-- React y ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js para el Dashboard de Indicadores -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- FontAwesome y Google Fonts -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Configuración Custom de Tailwind para el Dashboard Oscuro -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#020617',
+                        panel: '#0f172a',
+                        primary: '#38bdf8', 
+                        success: '#10b981', 
+                        warning: '#f59e0b', 
+                        danger: '#f43f5e',  
+                        annual: '#8b5cf6',  
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+
+        /* ================================================================
+           MEMBRETE INSTITUCIONAL HSAIP (impresión de formatos controlados)
+           Réplica del encabezado: logo | datos del hospital | título+código
+           ================================================================ */
+        .membrete-hsaip {
+            display: grid;
+            grid-template-columns: 170px 1fr 340px;
+            gap: 16px;
+            align-items: start;
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+        }
+        .membrete-logo { display: flex; align-items: flex-start; gap: 8px; }
+        .membrete-logo .barra { width: 10px; height: 92px; background: #8FAADC; border-radius: 2px; }
+        
+        .membrete-logo .caja {
+            border: 3px solid #2E74B5; border-radius: 14px 14px 14px 0;
+            width: 74px; height: 58px; display: flex; align-items: center; justify-content: center;
+            color: #2E74B5; font-size: 30px; margin-bottom: 4px;
+        }
+        .membrete-logo .marca { font-family: Arial, sans-serif; color: #2E74B5; line-height: 1.05; }
+        .membrete-logo .marca .h1 { font-size: 13px; }
+        .membrete-logo .marca .h2 { font-size: 16px; font-weight: 700; }
+        .membrete-logo .marca .h3 { font-size: 9px; letter-spacing: 3px; font-weight: 600; }
+        .membrete-logo img { max-height: 100px; max-width: 175px; object-fit: contain; }
+        
+        .membrete-datos { font-family: Arial, sans-serif; font-size: 12px; color: #2E74B5; line-height: 1.45; }
+        .membrete-datos .razon { font-weight: 700; color: #1F4687; }
+        .membrete-titulo { text-align: right; font-family: Arial, sans-serif; }
+        .membrete-titulo h1 {
+            color: #2E74B5; font-weight: 800; font-size: 21px; line-height: 1.15;
+            text-transform: uppercase; margin: 0 0 2px 0; text-align: center;
+        }
+        .membrete-titulo .codigo {
+            font-family: 'Courier New', monospace; color: #2E74B5; font-weight: 700;
+            font-size: 13px; letter-spacing: 1px; text-align: center; margin-bottom: 6px;
+        }
+        .membrete-campo { display: flex; justify-content: flex-end; gap: 10px; font-size: 13px; margin-top: 2px; }
+        .membrete-campo span { color: #000; }
+        .membrete-campo strong { min-width: 110px; text-align: left; color: #000; }
+
+        /* Formato impreso de revisión semanal (FOR-INB-008) */
+        .tabla-formato { width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 9px; }
+        .tabla-formato th, .tabla-formato td { border: 1px solid #000; padding: 2px 4px; }
+        .tabla-formato th { background: #D9E2F3 !important; font-weight: 700; text-align: center; }
+        .tabla-formato td.centro { text-align: center; font-weight: 700; }
+        .leyenda-controlado {
+            text-align: center; font-family: Arial, sans-serif; font-size: 8px; font-weight: 700;
+            border: 1px solid #000; padding: 3px; margin-top: 8px;
+        }
+        .salto-pagina { page-break-before: always; }
+        
+        /* Estilos de Impresión */
+        @media print {
+            html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; height: auto !important; overflow: visible !important; }
+            
+            /* Permite que los contenedores principales crezcan infinitamente para imprimir todas las páginas sin barras de scroll */
+            #root, main, .min-h-screen, .h-full, .overflow-y-auto, .overflow-x-auto, .overflow-hidden, .max-h-[65vh], .max-h-80 {
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                overflow: visible !important;
+            }
+            
+            /* Evita que el contenedor flex principal recorte el contenido en Chrome/Edge */
+            .min-h-screen { display: block !important; }
+
+            @page { size: landscape; margin: 5mm; }
+            
+            .print-hidden { display: none !important; }
+            .print-block { display: block !important; }
+            main { padding: 0 !important; margin: 0 !important; }
+            
+            /* Ajustes del CMMS */
+            .bg-slate-50 { background-color: white !important; }
+            .shadow-sm { box-shadow: none !important; border: none !important; }
+            
+            /* Ajustes del Dashboard de Indicadores (Conversión a Blanco para imprimir) */
+            .bg-dark, .bg-panel { 
+                background-color: white !important; 
+                border: none !important; 
+                border-bottom: 1px solid #cbd5e1 !important; 
+                box-shadow: none !important; 
+            }
+            .text-white { color: #0f172a !important; }
+            .text-slate-400, .text-slate-500, .text-slate-300, .text-slate-200 { color: #475569 !important; }
+            .border-slate-800, .border-slate-700 { border-color: #e2e8f0 !important; }
+            
+            /* Colores semánticos en texto */
+            .text-primary { color: #0284c7 !important; }
+            .text-danger { color: #dc2626 !important; }
+            .text-success { color: #16a34a !important; }
+            .text-warning { color: #d97706 !important; }
+            
+            .page-break-before { page-break-before: always !important; }
+            .page-break-inside-avoid { page-break-inside: avoid !important; }
+            
+            /* Asegurar visibilidad de Gráficos */
+            canvas { 
+                width: 100% !important; 
+                max-width: 100% !important;
+                max-height: 250px !important;
+            }
+        }
+        
+        /* Estilos del Calendario CMMS */
+        .tabla-cal th, .tabla-cal td { border: 1px solid #1e3a8a; }
+        .tabla-cal th { background-color: #60a5fa !important; color: white !important; font-weight: bold; text-align: center; }
+        .celda-prog { background-color: #3b82f6 !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
+        .celda-fuera-servicio { background-color: #ef4444 !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
+        .celda-ejec { background-color: #22c55e !important; position: relative; }
+        .celda-ejec::after { content: '✓'; color: white; font-size: 14px; font-weight: bold; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        .celda-interactiva { min-width: 25px; height: 25px; text-align: center; cursor: pointer; transition: background-color 0.2s; }
+        .celda-interactiva:hover { background-color: #bfdbfe !important; }
+
+        /* Scrollbars para Dashboard Oscuro */
+        .dark-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+        .dark-scroll::-webkit-scrollbar-track { background: #0f172a; }
+        .dark-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .dark-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+     <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef } = React;
+
+        // ============================================================================
+        // CONFIGURACIÓN GLOBAL
+        // ============================================================================
+        const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyctwfWaVlLRZVUH9P-6Z_PvCg_91W1Yc4sgFym72udvRq310JKk8p4GJR22Sqp-Ano/exec"; 
+
+        // ====================================================================
+        // [SEC] SESIÓN DE ACCESO
+        // ====================================================================
+        const SESION = {
+            get pin() { try { return window.localStorage.getItem('cmms_pin') || ''; } catch (e) { return ''; } },
+            get usuario() { try { return window.localStorage.getItem('cmms_usuario') || ''; } catch (e) { return ''; } },
+            guardar(pin, usuario) {
+                try {
+                    window.localStorage.setItem('cmms_pin', pin);
+                    window.localStorage.setItem('cmms_usuario', usuario);
+                } catch (e) {}
+            },
+            limpiar() {
+                try {
+                    window.localStorage.removeItem('cmms_pin');
+                    window.localStorage.removeItem('cmms_usuario');
+                } catch (e) {}
+            }
+        };
+
+        // ====================================================================
+        // [PERF] CACHÉ LOCAL DE DATOS (arranque instantáneo)
+        // ====================================================================
+        const CACHE_LOCAL = {
+            guardar(datos) {
+                try {
+                    window.localStorage.setItem('cmms_cache', JSON.stringify({ t: Date.now(), datos }));
+                } catch (e) { }
+            },
+            leer() {
+                try {
+                    const raw = window.localStorage.getItem('cmms_cache');
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) { return null; }
+            },
+            limpiar() {
+                try { window.localStorage.removeItem('cmms_cache'); } catch (e) {}
+            }
+        };
+
+        const CACHE_EXPEDIENTES = new Map();
+
+        const esAfirmativo = (v) => {
+            if (v === true) return true;
+            if (v === null || v === undefined) return false;
+            const s = String(v).trim()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toUpperCase();
+            return s === 'SI' || s === 'S' || s === 'TRUE' || s === '1' || s === 'VIGENTE';
+        };
+
+        const normTexto = (v) => String(v || '').trim()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .toUpperCase();
+
+        const estaFueraServicio = (e) => normTexto(e && e.estatus).indexOf('FUERA') > -1;
+        const estaEnServicio = (e) => !estaFueraServicio(e) && normTexto(e && e.estatus).indexOf('SERVICIO') > -1;
+        const esBajaDefinitiva = (e) => normTexto(e && e.motivoFueraServicio) === 'BAJA DEFINITIVA';
+
+        // ============================================================================
+        // GENERADOR DE ETIQUETAS DE IDENTIFICACIÓN DE EQUIPO
+        // ============================================================================
+        const QR_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAFAAQAAAADl65gHAAADU0lEQVR42u1bS66jQAwsnkZ67Nw3IPc/VecGxY5ZeRa2u+mE33ZokFAgtBKlVHaVCzIorm0/eBb+5wuhtFdRVTsWCkXV9nL1wfF7Y4OjIShKiCoBUYqdElKudo8jsQAEErBwwQgQqcGRxsHKS9orDVJguooje+JjA+N6oShF38OQAOE8DC/JT3+sW4o6Znljc6Hk+YV5yvJ+eZvM8+vgq9N2q7gjjulwUQLwB4AoMBt0aeIMCDHLO2GAlKt985F7Cxa/+gPMwzAMLwBzgrwT7Ch65l+/+tT1DhNDZ2Kja/NqW7/RO47jMYxQTgyRIUQ5hYt0zQYwGY7cd0896nVb25WIdMsjhZzEZO5cTvl4X53hsoYrmDimFVMXn2eEEzGxuMeocLPiqrnOMzzouUb0m/Ixnc2FdZSxPYYZbY467o+pIkkAC52CLDRlzIVe2jYUxixD+HD4zNdXcgrlZCCKaobjBinMlKrXvMLyu+p1aoRgTG3DRK1l9zqIGrdG6cHFw8dtdeU6NyvxzsrzmL64I/qqa+4bqXviyI3fzZaPSqFHZCyJjwSgnkY+fDyZaQxFd9xSICWkzDRX/OOdcaxmkVtUZO2PnjXGGFPp6RR99NrxSrvzhxLCKSpZdKu6q86wRxx5OsN5f0SkO7Jqloz+aJg+fNx0e6nho4SD5KTV6njJZ9nKe7j3mXecZxiJT2rCcC4VCC0ao2WmXilPqHbXfLzQzaCWUAjFuCi5CDVreibNPMOjmebW/nG/IjUI6ZNglWgW//jo9YW8x/W6mQN1lfyI8rf0xxOGj/fEMV347SWyrbMLo0M6S7Xv/mgufLHELK2EJ5hTdcYKOn9GFKLZJbzV6x39Z4c5BbAYlkVPpDbJ8qgP8OHDO+RjGm0/UBz34cXwaA6RwRTzjRKyfM3Xaftjl3vzkQdzTX3ejChxON2Ie6d89LoFkfU0RZrrZZyF+NUM1Gd64pYNJK/4mACM0W63umS3zz/WiKfeK2S9NeOK88zXX6QZvZelFkchIBlN/pjxy22dSZ+nY284fuYUq8jR7yi4B48bYDjtj7y1fwRS9DLuaqyuHqbQHBJd/Xfc1j5NkG5d1+dJRdFrhlqHYpuljKd/Tr+aXdZ1bMPzn4puFv4DqpI0U2+dvBcAAAAASUVORK5CYII=';
+
+        const ETQ_ANCHO_MM = 57;
+        const ETQ_ALTO_MM  = 31;
+        const ETQ_DPMM     = 12;   
+        const ETQ_ESCALA   = 2;    
+        const ETQ_QR_MM    = 24;   
+
+        const ETQ_W = ETQ_ANCHO_MM * ETQ_DPMM * ETQ_ESCALA;  
+        const ETQ_H = ETQ_ALTO_MM  * ETQ_DPMM * ETQ_ESCALA;  
+        const DPMM  = ETQ_DPMM * ETQ_ESCALA;                 
+
+        const ajustarTexto = (ctx, texto, maxAncho, tamInicial, tamMinimo) => {
+            let t = tamInicial;
+            while (t > tamMinimo) {
+                ctx.font = `bold ${t}px Arial, Helvetica, sans-serif`;
+                if (ctx.measureText(texto).width <= maxAncho) return t;
+                t -= 1;
+            }
+            return tamMinimo;
+        };
+
+        const partirTexto = (ctx, texto, maxAncho) => {
+            const palabras = String(texto).split(/\s+/).filter(Boolean);
+            const lineas = [];
+            let actual = '';
+            palabras.forEach(p => {
+                const prueba = actual ? actual + ' ' + p : p;
+                if (ctx.measureText(prueba).width <= maxAncho) actual = prueba;
+                else { if (actual) lineas.push(actual); actual = p; }
+            });
+            if (actual) lineas.push(actual);
+            return lineas;
+        };
+
+        const generarEtiqueta = (equipo) => {
+            return new Promise((resolve, reject) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = ETQ_W; canvas.height = ETQ_H;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, ETQ_W, ETQ_H);
+
+                const img = new Image();
+                img.onload = () => {
+                    const margen = Math.round(1.2 * DPMM);
+                    const qrLado = Math.round(ETQ_QR_MM * DPMM);
+                    ctx.imageSmoothingEnabled = false;   
+                    ctx.drawImage(img, margen, Math.round((ETQ_H - qrLado) / 2), qrLado, qrLado);
+                    ctx.imageSmoothingEnabled = true;
+
+                    const xIni = margen + qrLado + Math.round(1.5 * DPMM);
+                    const aw = ETQ_W - xIni - margen;
+                    const cx = xIni + aw / 2;
+
+                    const T_INV = Math.round(3.6 * DPMM);   
+                    const T_NOM = Math.round(2.6 * DPMM);   
+                    const T_CPO = Math.round(2.2 * DPMM);   
+                    const T_MIN = Math.round(1.5 * DPMM);   
+
+                    ctx.fillStyle = '#000000';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+
+                    const lineas = [];
+
+                    ctx.font = `bold ${T_NOM}px Arial, Helvetica, sans-serif`;
+                    partirTexto(ctx, equipo.nombre || '-', aw)
+                        .slice(0, 2)
+                        .forEach(l => lineas.push({ txt: l, tam: T_NOM }));
+
+                    ctx.font = `bold ${T_CPO}px Arial, Helvetica, sans-serif`;
+                    if (equipo.marca) {
+                        partirTexto(ctx, equipo.marca, aw).slice(0, 1)
+                            .forEach(l => lineas.push({ txt: l, tam: T_CPO }));
+                    }
+                    if (equipo.modelo) {
+                        partirTexto(ctx, 'Mod: ' + equipo.modelo, aw).slice(0, 1)
+                            .forEach(l => lineas.push({ txt: l, tam: T_CPO }));
+                    }
+                    if (equipo.numeroSerie) {
+                        lineas.push({ txt: 'N/S: ' + equipo.numeroSerie, tam: T_CPO });
+                    }
+                    if (equipo.ubicacion) {
+                        partirTexto(ctx, equipo.ubicacion, aw).slice(0, 1)
+                            .forEach(l => lineas.push({ txt: l, tam: T_CPO }));
+                    }
+
+                    const inv = String(equipo.numeroInventario || '');
+
+                    let total = lineas.reduce((a, l) => a + l.tam * 1.26, 0);
+                    if (inv) total += T_INV * 1.32;
+                    const disp = ETQ_H - 2 * margen;
+                    const esc = total > disp ? disp / total : 1;
+
+                    let y = (ETQ_H - total * esc) / 2;
+                    lineas.forEach(l => {
+                        const tam = ajustarTexto(ctx, l.txt, aw, Math.round(l.tam * esc), T_MIN);
+                        ctx.font = `bold ${tam}px Arial, Helvetica, sans-serif`;
+                        ctx.fillText(l.txt, cx, y + l.tam * esc * 0.63);
+                        y += l.tam * esc * 1.26;
+                    });
+
+                    if (inv) {
+                        const tam = ajustarTexto(ctx, inv, aw, Math.round(T_INV * esc), T_MIN);
+                        ctx.font = `bold ${tam}px Arial, Helvetica, sans-serif`;
+                        ctx.fillText(inv, cx, y + T_INV * esc * 0.66);
+                    }
+
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                img.onerror = () => reject(new Error('No se pudo cargar el código QR.'));
+                img.src = QR_BASE64;
+            });
+        };
+
+        const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+        // ============================================================================
+        // CAPA DE TRANSPORTE JSONP
+        // ============================================================================
+        let __jsonpId = 0;
+
+        const jsonpRequest = (params, timeoutMs = 30000) => {
+            return new Promise((resolve, reject) => {
+                const cbName = `__cmms_cb_${Date.now()}_${__jsonpId++}`;
+                const script = document.createElement('script');
+                let terminado = false;
+
+                const limpiar = () => {
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+                };
+
+                const temporizador = setTimeout(() => {
+                    if (terminado) return;
+                    terminado = true; limpiar();
+                    reject(new Error('Tiempo de espera agotado. Verifica la URL del Apps Script y que la implementación esté como "Cualquier usuario".'));
+                }, timeoutMs);
+
+                window[cbName] = (data) => {
+                    if (terminado) return;
+                    terminado = true;
+                    clearTimeout(temporizador); limpiar();
+                    if (data && data.error) reject(new Error(data.error));
+                    else resolve(data);
+                };
+
+                const qs = new URLSearchParams({
+                    pin: SESION.pin,
+                    ua: (navigator.userAgent || '').slice(0, 150),
+                    ...params,
+                    callback: cbName
+                }).toString();
+                script.src = `${GOOGLE_SHEETS_WEBAPP_URL}?${qs}`;
+                script.onerror = () => {
+                    if (terminado) return;
+                    terminado = true;
+                    clearTimeout(temporizador); limpiar();
+                    reject(new Error('No se pudo contactar el backend. Revisa la URL de implementación.'));
+                };
+                document.body.appendChild(script);
+            });
+        };
+
+        const jsonpConReintentos = async (params, intentos = 3) => {
+            let ultimoError;
+            for (let i = 0; i < intentos; i++) {
+                try {
+                    return await jsonpRequest(params);
+                } catch (err) {
+                    ultimoError = err;
+                    if (i < intentos - 1) await new Promise(r => setTimeout(r, 1200 * (i + 1)));
+                }
+            }
+            throw ultimoError;
+        };
+
+        const motivosOptions = [
+            "PENDIENTE DE CALIBRACION", "EN MANTENIMIENTO PREVENTIVO", "EN REPARACION", 
+            "EN ESPERA DE REFACCIONES", "DAÑO SIN POSIBILIDAD DE REPARACION", "PRESTADO", 
+            "EN CAMBIO O SUSTITUCION", "BAJA DEFINITIVA"
+        ];
+
+        const frecuenciasOptions = [
+            { id: '', label: 'No aplica / Sin definir' }, { id: 'M', label: 'M - MENSUAL' }, 
+            { id: 'B', label: 'B - BIMESTRAL' }, { id: 'T', label: 'T - TRIMESTRAL' }, 
+            { id: 'C', label: 'C - CUATRIMESTRAL' }, { id: 'S', label: 'S - SEMESTRAL' }, 
+            { id: 'A', label: 'A - ANUAL' }
+        ];
+
+        const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+
+        const PREFIJOS_INVENTARIO = { Propio: 'PAT', Comodato: 'CPAT', Renta: 'RPAT' };
+
+        const previsualizarSiguienteFolio = (origen, listaEquipos) => {
+            const prefijo = PREFIJOS_INVENTARIO[origen] || '';
+            let max = 0;
+            listaEquipos.forEach(eq => {
+                if (eq.origen !== origen) return;
+                const m = String(eq.numeroInventario || '').match(/(\d+)\s*$/);
+                if (m) {
+                    const n = parseInt(m[1], 10);
+                    if (!isNaN(n) && n > max) max = n;
+                }
+            });
+            return `${prefijo}${max + 1}`;
+        };
+
+        const INVENTARIO_PAGE_SIZE = 30;
+
+        const obtenerMesesProgramados = (ultimoMantenimiento, frecuencia, targetYear) => {
+            const mesesProgramados = new Set();
+            if (!ultimoMantenimiento || !frecuencia) return mesesProgramados;
+            const [uYear, uMonth] = ultimoMantenimiento.split('-').map(Number);
+            if (!uYear || !uMonth) return mesesProgramados;
+
+            let interval = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
+            if (interval === 0) return mesesProgramados;
+
+            let startMonth = uMonth - 1; 
+            let startYear = uYear;
+            while (startYear >= targetYear && interval > 0) {
+                startMonth -= interval;
+                while (startMonth < 0) { startMonth += 12; startYear -= 1; }
+            }
+
+            let simMonth = startMonth;
+            let simYear = startYear;
+            for (let i = 0; i < 100; i++) {
+                simMonth += interval;
+                while (simMonth > 11) { simMonth -= 12; simYear += 1; }
+                if (simYear === targetYear) { mesesProgramados.add(simMonth); }
+                else if (simYear > targetYear) { break; }
+            }
+            return mesesProgramados;
+        };
+
+        const calcularProximoMantenimiento = (fechaUltimo, frecuencia) => {
+            if (!fechaUltimo || !frecuencia) return '';
+            const [yearStr, monthStr] = fechaUltimo.split('-');
+            let date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
+            if (isNaN(date.getTime())) return '';
+            let meses = frecuencia === 'M'?1 : frecuencia==='B'?2 : frecuencia==='T'?3 : frecuencia==='C'?4 : frecuencia==='S'?6 : frecuencia==='A'?12 : 0;
+            date.setMonth(date.getMonth() + meses);
+            const m = date.getMonth() + 1;
+            return `${date.getFullYear()}-${m < 10 ? '0' : ''}${m}`; 
+        };
+
+        const limpiarHistorial = (str) => {
+            if (!str) return [];
+            return String(str).split(',').map(s => {
+                const match = s.match(/(\d{4})-(\d{2})/);
+                return match ? match[0] : null;
+            }).filter(Boolean);
+        };
+
+        const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
+            if (!historialEjecuciones) return false;
+            const ejecutados = limpiarHistorial(historialEjecuciones);
+            const formatYM = (y, m) => `${y}-${(m + 1).toString().padStart(2, '0')}`;
+            
+            let pMonth = targetMonthIndex - 1, pYear = targetYear;
+            if (pMonth < 0) { pMonth = 11; pYear--; }
+            
+            let nMonth = targetMonthIndex + 1, nYear = targetYear;
+            if (nMonth > 11) { nMonth = 0; nYear++; }
+
+            return ejecutados.includes(formatYM(targetYear, targetMonthIndex)) || 
+                   ejecutados.includes(formatYM(pYear, pMonth)) || 
+                   ejecutados.includes(formatYM(nYear, nMonth));
+        };
+
+        // ============================================================================
+        // COMPONENTE: DASHBOARD DE INDICADORES
+        // ============================================================================
+        const IndicadoresDashboard = ({ equipos, indicadores, sincronizando, errorSync }) => {
+            const [dataSet, setDataSet] = useState({});
+            const [historico, setHistorico] = useState({ meses: [], mp: [], gastoTotal: [] });
+            const [currentMonth, setCurrentMonth] = useState('');
+            const [isAnnualView, setIsAnnualView] = useState(false);
+            const [isLoading, setIsLoading] = useState(true);
+            const [error, setError] = useState(false);
+            const [dashYear, setDashYear] = useState(new Date().getFullYear()); 
+
+            const ratioChartRef = useRef(null);
+            const downtimeChartRef = useRef(null);
+            const budgetChartRef = useRef(null);
+            const trendChartRef = useRef(null);
+            const expenseTrendChartRef = useRef(null);
+            const chartInstances = useRef({});
+
+            useEffect(() => {
+                if (sincronizando) { setIsLoading(true); return; }
+                if (errorSync && (!indicadores || indicadores.length === 0)) {
+                    setError(true);
+                    setIsLoading(false);
+                    return;
+                }
+                setError(false);
+                procesarDatos(indicadores || []);
+                setIsLoading(false);
+            }, [indicadores, sincronizando, errorSync]);
+
+            const obtenerMesAnterior = () => {
+                const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+                let mesIndex = new Date().getMonth() - 1; 
+                if (mesIndex < 0) mesIndex = 11; 
+                return meses[mesIndex];
+            };
+
+            const ORDEN_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+            const procesarDatos = (rows) => {
+                let tempDataSet = {}; 
+                let histMeses = [], histMP = [], histGasto = [];
+
+                const ordenadas = (rows || []).slice().sort((a, b) =>
+                    ORDEN_MESES.indexOf(String(a.mes || '').trim().toLowerCase()) -
+                    ORDEN_MESES.indexOf(String(b.mes || '').trim().toLowerCase())
+                );
+
+                ordenadas.forEach(row => {
+                    const mes = String(row.mes || '').trim().toLowerCase();
+                    if (!mes) return;
+                    const mesFormateado = mes.charAt(0).toUpperCase() + mes.slice(1);
+
+                    if (!tempDataSet[mes]) {
+                        const raw = {
+                            mp: Number(row.mp_cumplimiento) || 0,
+                            mttr: Number(row.mttr) || 0,
+                            downReso: Number(row.downtime_resonancia) || 0,
+                            downTomo: Number(row.downtime_tomografia) || 0,
+                            downHemo: Number(row.downtime_hemodinamia) || 0,
+                            downRayos: Number(row.downtime_rayos_x) || 0,
+                            presTotalAsig: Number(row.presupuesto_total_asig) || 100,
+                            presTotalEjer: Number(row.presupuesto_total_ejer) || 0,
+                            presMttoAsig: Number(row.presupuesto_mtto_asig) || 100,
+                            presMttoEjer: Number(row.presupuesto_mtto_ejer) || 0,
+                            ratioMP: Number(row.ratio_mp) || 0,
+                            ratioMC: Number(row.ratio_mc) || 0
+                        };
+
+                        histMeses.push(mesFormateado);
+                        histMP.push(raw.mp);
+                        histGasto.push(raw.presTotalEjer);
+
+                        const totalDowntime = raw.downReso + raw.downTomo + raw.downHemo + raw.downRayos;
+                        const pctTotal = (raw.presTotalEjer / raw.presTotalAsig) * 100;
+                        const pctMtto = (raw.presMttoEjer / raw.presMttoAsig) * 100;
+
+                        tempDataSet[mes] = {
+                            raw,
+                            kpis: { mp_cumplimiento: raw.mp, mttr: raw.mttr, downtime: totalDowntime, budget_total: pctTotal, budget_mxn: raw.presTotalEjer },
+                            finanzas: { asigTotal: raw.presTotalAsig, ejerTotal: raw.presTotalEjer, asigMtto: raw.presMttoAsig, ejerMtto: raw.presMttoEjer },
+                            charts: { ratio_mp: raw.ratioMP, ratio_mc: raw.ratioMC, downtime_equipos: [raw.downReso, raw.downTomo, raw.downHemo, raw.downRayos], budget_pct: [pctTotal, pctMtto] },
+                            retos: []
+                        };
+                    }
+
+                    for (let i = 1; i <= 5; i++) {
+                        let titulo = row[`reto${i}_titulo`];
+                        let desc = row[`reto${i}_desc`];
+                        let tipo = row[`reto${i}_tipo`];
+
+                        if (titulo && String(titulo).trim() !== "") {
+                            let tipoClean = String(tipo || 'primary').trim();
+                            let iconClass = tipoClean === 'danger' ? 'fa-triangle-exclamation' : (tipoClean === 'warning' ? 'fa-bolt' : (tipoClean === 'success' ? 'fa-check-double' : 'fa-thumbtack'));
+                            tempDataSet[mes].retos.push({ tipo: tipoClean, icon: iconClass, titulo: String(titulo).trim(), desc: String(desc || '').trim() });
+                        }
+                    }
+                });
+
+                setDataSet(tempDataSet);
+                setHistorico({ meses: histMeses, mp: histMP, gastoTotal: histGasto });
+
+                let keys = Object.keys(tempDataSet);
+                if (keys.length > 0) {
+                    let mesIdeal = obtenerMesAnterior();
+                    setCurrentMonth(tempDataSet[mesIdeal] ? mesIdeal : keys[keys.length - 1]);
+                }
+            };
+
+            const currentData = useMemo(() => {
+                if (Object.keys(dataSet).length === 0) return null;
+
+                if (isAnnualView) {
+                    let sumMP = 0, sumMTTR = 0, count = 0, sumDown = [0,0,0,0], sumAsigTotal = 0, sumEjerTotal = 0, sumAsigMtto = 0, sumEjerMtto = 0, sumRatioMP = 0, sumRatioMC = 0;
+                    Object.values(dataSet).forEach(d => {
+                        let r = d.raw;
+                        sumMP += r.mp; sumMTTR += r.mttr;
+                        sumDown[0] += r.downReso; sumDown[1] += r.downTomo; sumDown[2] += r.downHemo; sumDown[3] += r.downRayos;
+                        sumAsigTotal += r.presTotalAsig; sumEjerTotal += r.presTotalEjer; sumAsigMtto += r.presMttoAsig; sumEjerMtto += r.presMttoEjer;
+                        sumRatioMP += r.ratioMP; sumRatioMC += r.ratioMC; count++;
+                    });
+                    return {
+                        isAnnual: true, count,
+                        kpis: { mp: (sumMP/count).toFixed(1), mttr: (sumMTTR/count).toFixed(1), downtime: sumDown.reduce((a,b)=>a+b, 0), bgTotal: sumAsigTotal ? ((sumEjerTotal/sumAsigTotal)*100) : 0, bgMxn: sumEjerTotal },
+                        finanzas: { asigTotal: sumAsigTotal, ejerTotal: sumEjerTotal, asigMtto: sumAsigMtto, ejerMtto: sumEjerMtto },
+                        charts: { ratio_mp: sumRatioMP/count, ratio_mc: sumRatioMC/count, downtime_equipos: sumDown, budget_pct: [sumAsigTotal ? ((sumEjerTotal/sumAsigTotal)*100) : 0, sumAsigMtto ? ((sumEjerMtto/sumAsigMtto)*100) : 0] },
+                        retos: []
+                    };
+                } else {
+                    if (!currentMonth || !dataSet[currentMonth]) return null;
+                    const d = dataSet[currentMonth];
+                    return {
+                        isAnnual: false,
+                        kpis: { mp: d.kpis.mp_cumplimiento, mttr: d.kpis.mttr, downtime: d.kpis.downtime, bgTotal: d.kpis.budget_total, bgMxn: d.kpis.budget_mxn },
+                        finanzas: d.finanzas,
+                        charts: d.charts,
+                        retos: d.retos
+                    };
+                }
+            }, [dataSet, currentMonth, isAnnualView]);
+
+            const monthlyCompliance = useMemo(() => {
+                if (!equipos || equipos.length === 0) return [];
+                
+                return mesesAbreviados.map((nombreMes, monthIndex) => {
+                    let programados = 0;
+                    let cumplidos = 0;
+                    
+                    equipos.forEach(equipo => {
+                        if (esBajaDefinitiva(equipo)) return;
+                        
+                        const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, dashYear);
+                        
+                        if (mesesProgramados.has(monthIndex)) {
+                            if (!estaFueraServicio(equipo)) {
+                                programados++;
+                                if (verificarCumplimiento(equipo.historialEjecuciones, monthIndex, dashYear)) {
+                                    cumplidos++;
+                                }
+                            }
+                        }
+                    });
+                    
+                    const pct = programados === 0 ? 100 : Math.round((cumplidos / programados) * 100);
+                    return { mes: nombreMes, programados, cumplidos, pct };
+                });
+            }, [equipos, dashYear]);
+
+            useEffect(() => {
+                if (!currentData) return;
+
+                Object.values(chartInstances.current).forEach(chart => chart && chart.destroy());
+                chartInstances.current = {};
+
+                Chart.defaults.color = '#94a3b8';
+                Chart.defaults.font.family = "'Inter', sans-serif";
+                Chart.defaults.plugins.tooltip.backgroundColor = '#1e293b';
+                Chart.defaults.plugins.tooltip.titleColor = '#f8fafc';
+                Chart.defaults.plugins.tooltip.padding = 12;
+                Chart.defaults.plugins.tooltip.borderColor = '#334155';
+                Chart.defaults.plugins.tooltip.borderWidth = 1;
+
+                if (ratioChartRef.current) {
+                    chartInstances.current.ratio = new Chart(ratioChartRef.current, {
+                        type: 'doughnut',
+                        data: { labels: ['Preventivo (MP)', 'Correctivo (MC)'], datasets: [{ data: [currentData.charts.ratio_mp, currentData.charts.ratio_mc], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }] },
+                        options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } } }
+                    });
+                }
+
+                if (downtimeChartRef.current) {
+                    chartInstances.current.downtime = new Chart(downtimeChartRef.current, {
+                        type: 'bar',
+                        data: { labels: ['Resonancia', 'Tomografía', 'Hemodinamia', 'Rayos X'], datasets: [{ label: 'Horas', data: currentData.charts.downtime_equipos, backgroundColor: ['#f43f5e', '#f59e0b', '#38bdf8', '#10b981'], borderRadius: 4 }] },
+                        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { suggestedMax: 50, grid: { color: '#1e293b' } }, y: { grid: { display: false } } } }
+                    });
+                }
+
+                if (budgetChartRef.current) {
+                    chartInstances.current.budget = new Chart(budgetChartRef.current, {
+                        type: 'bar',
+                        data: { labels: ['Total Depto.', 'Refacciones / Mtto.'], datasets: [{ label: '% Ejercido', data: currentData.charts.budget_pct, backgroundColor: currentData.charts.budget_pct.map(v => v > 100 ? '#f43f5e' : '#38bdf8'), borderRadius: 4 }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: Math.max(120, ...currentData.charts.budget_pct) + 10, grid: { color: '#1e293b' } }, x: { grid: { display: false } } }, animation: { onComplete: function() { const ctx = this.ctx; const y100 = this.scales.y.getPixelForValue(100); ctx.save(); ctx.beginPath(); ctx.moveTo(this.chartArea.left, y100); ctx.lineTo(this.chartArea.right, y100); ctx.lineWidth = 2; ctx.strokeStyle = '#f43f5e'; ctx.setLineDash([5, 5]); ctx.stroke(); ctx.restore(); } } }
+                    });
+                }
+
+                if (trendChartRef.current) {
+                    chartInstances.current.trend = new Chart(trendChartRef.current, {
+                        type: 'line',
+                        data: {
+                            labels: historico.meses,
+                            datasets: [{
+                                label: '% de Cumplimiento MP', data: historico.mp, borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                                borderWidth: 3, pointBackgroundColor: '#0f172a', pointBorderColor: '#38bdf8', pointBorderWidth: 2, pointRadius: 4, fill: true, tension: 0.4
+                            }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: function(context) { return context.parsed.y + '%'; } } } }, scales: { y: { min: 50, max: 100, grid: { color: '#1e293b' }, ticks: { callback: function(value) { return value + "%"; } } }, x: { grid: { display: false } } } }
+                    });
+                }
+
+                if (isAnnualView && expenseTrendChartRef.current) {
+                    chartInstances.current.expense = new Chart(expenseTrendChartRef.current, {
+                        type: 'line',
+                        data: {
+                            labels: historico.meses,
+                            datasets: [{
+                                label: 'Gasto Mensual Total (MXN)', data: historico.gastoTotal, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                borderWidth: 3, pointBackgroundColor: '#0f172a', pointBorderColor: '#8b5cf6', pointBorderWidth: 2, pointRadius: 4, fill: true, tension: 0.4
+                            }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: function(context) { return mxnFormatter.format(context.parsed.y); } } } }, scales: { y: { beginAtZero: true, grid: { color: '#1e293b' }, ticks: { callback: function(value) { return mxnFormatter.format(value); } } }, x: { grid: { display: false } } } }
+                    });
+                }
+
+            }, [currentData, historico]);
+
+            if (error) return (
+                <div className="flex flex-col items-center justify-center p-12 text-center h-full text-slate-800">
+                    <i className="fa-solid fa-triangle-exclamation text-6xl text-red-500 mb-4 animate-pulse"></i>
+                    <h2 className="text-2xl font-bold mb-2">Error de Conexión a la Nube</h2>
+                    <p className="text-slate-500 max-w-md">No se pudo recuperar la hoja "Indicadores" del libro de Google Sheets. Usa el botón "Sincronizar Sheets" para reintentar.</p>
+                </div>
+            );
+
+            if (isLoading) return (
+                <div className="flex flex-col items-center justify-center p-12 text-slate-800 h-full">
+                    <i className="fa-solid fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
+                    <p className="font-medium">Cargando indicadores...</p>
+                </div>
+            );
+
+            if (!currentData) return (
+                <div className="flex flex-col items-center justify-center p-12 text-center h-full text-slate-800">
+                    <i className="fa-solid fa-table-list text-6xl text-slate-300 mb-4"></i>
+                    <h2 className="text-2xl font-bold mb-2">Sin indicadores capturados</h2>
+                    <p className="text-slate-500 max-w-md">
+                        La hoja <strong>"Indicadores"</strong> del libro de inventario aún no tiene filas.
+                        Captura una fila por mes (columna <code>mes</code> en minúsculas: enero, febrero...)
+                        con los KPI del periodo y vuelve a sincronizar.
+                    </p>
+                </div>
+            );
+
+            return (
+                <div className="bg-dark text-slate-200 p-4 md:p-6 rounded-2xl shadow-xl w-full mx-auto animate-in fade-in duration-500 dark-scroll">
+                    <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-panel p-6 rounded-xl border border-slate-800 shadow-lg mb-6">
+                        <div>
+                            <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+                                Indicadores de Ingeniería Biomédica 
+                                <span className={`text-xl ml-2 capitalize ${isAnnualView ? 'text-annual' : 'text-primary'}`}>
+                                    ({isAnnualView ? 'Acumulado Anual' : currentMonth})
+                                </span>
+                            </h1>
+                            <p className="text-slate-400 mt-1"><i className="fa-regular fa-hospital mr-2"></i>Hospital San Ángel Inn</p>
+                        </div>
+                        
+                        <div className="flex flex-wrap items-center gap-3 print-hidden">
+                            <button onClick={() => setIsAnnualView(true)} className="bg-annual hover:bg-violet-400 text-white font-bold py-1.5 px-4 rounded-lg transition-colors shadow-[0_0_10px_rgba(139,92,246,0.3)] flex items-center border border-violet-500">
+                                <i className="fa-solid fa-chart-line mr-2"></i>Vista Anual
+                            </button>
+                            <div className="flex items-center gap-2 bg-dark p-1.5 rounded-lg border border-slate-700 shadow-inner">
+                                <label className="text-sm font-medium text-slate-300 ml-2"><i className="fa-regular fa-calendar mr-1"></i> Periodo:</label>
+                                <select value={isAnnualView ? '' : currentMonth} onChange={(e) => { setIsAnnualView(false); setCurrentMonth(e.target.value); }} className="bg-dark text-white border-none rounded px-3 py-1 outline-none cursor-pointer">
+                                    <option value="" disabled>Seleccione...</option>
+                                    {Object.keys(dataSet).map(mes => (
+                                        <option key={mes} value={mes}>{mes.charAt(0).toUpperCase() + mes.slice(1)}</option>
+                                    ))}
+                                </select>
+                                <button onClick={() => window.print()} className="text-slate-400 hover:text-white px-2 ml-1" title="Imprimir Reporte">
+                                    <i className="fa-solid fa-print"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
+                            <div className="flex justify-between items-start mb-2">
+                                <p className="text-slate-400 text-sm font-medium">{isAnnualView ? 'Promedio MP Anual' : 'Cumplimiento MP'}</p>
+                                <div className="p-2 bg-slate-800/50 rounded-lg text-primary print-hidden"><i className="fa-solid fa-clipboard-check"></i></div>
+                            </div>
+                            <div>
+                                <h3 className={`text-3xl font-bold ${currentData.kpis.mp >= 95 ? 'text-success' : currentData.kpis.mp >= 85 ? 'text-warning' : 'text-danger'}`}>{currentData.kpis.mp}%</h3>
+                                <p className="text-xs text-slate-500 mt-1">Meta: {'>'}95%</p>
+                            </div>
+                        </div>
+                        <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
+                            <div className="flex justify-between items-start mb-2">
+                                <p className="text-slate-400 text-sm font-medium">{isAnnualView ? 'Promedio MTTR Anual' : 'MTTR (Mensual)'}</p>
+                                <div className="p-2 bg-slate-800/50 rounded-lg text-primary print-hidden"><i className="fa-solid fa-stopwatch"></i></div>
+                            </div>
+                            <div>
+                                <h3 className={`text-3xl font-bold ${currentData.kpis.mttr <= 48 ? 'text-success' : currentData.kpis.mttr <= 72 ? 'text-warning' : 'text-danger'}`}>{currentData.kpis.mttr} <span className="text-lg font-normal text-slate-400">hrs</span></h3>
+                                <p className="text-xs text-slate-500 mt-1">Meta: {'<'} 48 hrs</p>
+                            </div>
+                        </div>
+                        <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
+                            <div className="flex justify-between items-start mb-2">
+                                <p className="text-slate-400 text-sm font-medium">Downtime Modalidades</p>
+                                <div className="p-2 bg-slate-800/50 rounded-lg text-danger print-hidden"><i className="fa-solid fa-triangle-exclamation"></i></div>
+                            </div>
+                            <div>
+                                <h3 className="text-3xl font-bold text-danger">{currentData.kpis.downtime} <span className="text-lg font-normal text-slate-400">hrs</span></h3>
+                                <p className="text-xs text-slate-500 mt-1">Tomo, Hemo, Reso, Rayos X</p>
+                            </div>
+                        </div>
+                        <div className="bg-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between page-break-inside-avoid">
+                            <div className="flex justify-between items-start mb-2 relative z-10">
+                                <p className="text-slate-400 text-sm font-medium">Ejecución Gasto</p>
+                                <div className="p-2 bg-slate-800/50 rounded-lg text-success print-hidden"><i className="fa-solid fa-sack-dollar"></i></div>
+                            </div>
+                            <div className="relative z-10">
+                                <div className="flex items-baseline gap-2">
+                                    <h3 className={`text-3xl font-bold ${currentData.kpis.bgTotal > 100 ? 'text-danger' : 'text-white'}`}>{Number(currentData.kpis.bgTotal).toFixed(1)}%</h3>
+                                    <span className="text-sm font-medium text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded">{mxnFormatter.format(currentData.kpis.bgMxn)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 flex flex-col gap-6">
+                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '20rem'}}>
+                                <h3 className="text-white font-semibold mb-1">Inactividad por Equipo Específico</h3>
+                                <div className="relative flex-grow w-full"><canvas ref={downtimeChartRef}></canvas></div>
+                            </div>
+                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '20rem'}}>
+                                <h3 className="text-white font-semibold mb-1">Evolución de Cumplimiento (Histórico)</h3>
+                                <div className="relative flex-grow w-full"><canvas ref={trendChartRef}></canvas></div>
+                            </div>
+                            {isAnnualView && (
+                                <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '20rem'}}>
+                                    <h3 className="text-white font-semibold mb-1 text-annual">Tendencia Mensual de Gasto Presupuestal</h3>
+                                    <div className="relative flex-grow w-full"><canvas ref={expenseTrendChartRef}></canvas></div>
+                                </div>
+                            )}
+                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '24rem'}}>
+                                <h3 className="text-white font-semibold mb-1">Estado Financiero (Asignado vs Ejercido)</h3>
+                                <div className="grid grid-cols-2 gap-3 mb-2">
+                                    <div className="bg-dark p-3 rounded-lg border border-slate-700/50">
+                                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2">Total Depto.</p>
+                                        <div className="flex flex-col text-xs gap-1">
+                                            <div className="flex justify-between"><span className="text-slate-400">Presupuestado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.asigTotal)}</span></div>
+                                            <div className="flex justify-between"><span className="text-slate-400">Gastado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.ejerTotal)}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-dark p-3 rounded-lg border border-slate-700/50">
+                                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2">Mantenimiento</p>
+                                        <div className="flex flex-col text-xs gap-1">
+                                            <div className="flex justify-between"><span className="text-slate-400">Presupuestado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.asigMtto)}</span></div>
+                                            <div className="flex justify-between"><span className="text-slate-400">Gastado:</span> <span className="text-white font-medium">{mxnFormatter.format(currentData.finanzas.ejerMtto)}</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="relative flex-grow w-full"><canvas ref={budgetChartRef}></canvas></div>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col gap-6">
+                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex flex-col page-break-inside-avoid" style={{minHeight: '20rem'}}>
+                                <h3 className="text-white font-semibold mb-1">Carga de Trabajo</h3>
+                                <div className="relative w-full flex-grow flex items-center justify-center overflow-hidden"><canvas ref={ratioChartRef}></canvas></div>
+                            </div>
+                            <div className="bg-panel p-6 rounded-xl border border-slate-800 flex-grow flex flex-col page-break-before page-break-inside-avoid" style={{minHeight: '24rem'}}>
+                                <h3 className="text-white font-semibold mb-4 border-b border-slate-700 pb-2">
+                                    <i className={`fa-solid ${isAnnualView ? 'fa-chart-line text-annual' : 'fa-thumbtack text-primary'} mr-2`}></i>
+                                    {isAnnualView ? 'Resumen Estratégico' : 'Retos y Hallazgos'}
+                                </h3>
+                                <div className="flex flex-col gap-3 overflow-y-auto pr-3 flex-grow max-h-[32rem] dark-scroll">
+                                    {isAnnualView ? (
+                                        <div className="flex gap-4 items-start p-3 bg-dark rounded-lg border border-slate-700/50">
+                                            <div className="p-2 rounded-full mt-1 text-annual bg-annual/10"><i className="fa-solid fa-calendar-check fa-fw"></i></div>
+                                            <div><h4 className="text-white text-sm font-semibold">Vista Consolidada</h4><p className="text-slate-400 text-xs mt-1">Promedios y sumas base a {currentData.count} meses operativos.</p></div>
+                                        </div>
+                                    ) : (
+                                        currentData.retos.length > 0 ? currentData.retos.map((r, i) => {
+                                            let colorClass = r.tipo === 'danger' ? 'text-danger bg-danger/10 border-danger/30' : r.tipo === 'warning' ? 'text-warning bg-warning/10 border-warning/30' : r.tipo === 'success' ? 'text-success bg-success/10 border-success/30' : 'text-primary bg-primary/10 border-primary/30';
+                                            return (
+                                                <div key={i} className={`flex gap-4 items-start p-3 bg-dark rounded-lg border ${colorClass} transition-colors hover:border-slate-500`}>
+                                                    <div className="p-2 rounded-full mt-1"><i className={`fa-solid ${r.icon} fa-fw`}></i></div>
+                                                    <div className="flex-grow">
+                                                        <h4 className="text-white text-sm font-semibold">{r.titulo}</h4>
+                                                        <p className="text-slate-400 text-xs mt-1 leading-relaxed">{r.desc}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }) : <p className="text-slate-500 text-xs italic text-center p-4">No se registraron hallazgos especiales.</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-panel rounded-xl shadow-sm border border-slate-800 p-6 mt-6 page-break-before">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-lg font-bold text-white flex items-center"><i className="fas fa-clipboard-check text-primary mr-2"></i> Cumplimiento Mensual (Tolerancia ±1 Mes)</h3>
+                            <div className="flex items-center gap-2 print-hidden">
+                                <label className="text-sm font-bold text-slate-400">AÑO:</label>
+                                <input type="number" value={dashYear} onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setDashYear(v); }} className="w-20 p-1 text-center bg-dark border border-slate-700 rounded text-sm font-bold text-white outline-none focus:border-primary" />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            {monthlyCompliance.map(mesData => (
+                                <div key={mesData.mes} className={`border rounded-lg p-3 text-center transition-colors ${mesData.programados === 0 ? 'bg-dark border-slate-800 opacity-60' : 'bg-dark border-slate-700 shadow-sm'}`}>
+                                    <p className="font-bold text-slate-300">{mesData.mes}</p>
+                                    <div className="my-2">
+                                        <span className={`text-2xl font-black ${mesData.programados === 0 ? 'text-slate-500' : mesData.pct >= 80 ? 'text-success' : mesData.pct >= 50 ? 'text-warning' : 'text-danger'}`}>
+                                            {mesData.programados === 0 ? '-' : `${mesData.pct}%`}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-slate-500 flex justify-center gap-2 font-medium">
+                                        <span title="Cumplidos" className="text-success font-bold"><i className="fas fa-check"></i> {mesData.cumplidos}</span>
+                                        <span title="Programados" className="text-primary font-bold"><i className="fas fa-wrench"></i> {mesData.programados}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-4 text-center italic"><i className="fas fa-info-circle"></i> Los equipos "Fuera de Servicio" no penalizan la métrica de Programados.</p>
+                    </div>
+                </div>
+            );
+        };
+
+        // ============================================================================
+        // MEMBRETE INSTITUCIONAL PARA IMPRESIÓN DE FORMATOS
+        // ============================================================================
+        const LOGO_HSAIP_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAcAAAAEECAMAAACIghTjAAABgFBMVEX///////7+///+//79/////v/+/v/+/v7+/v3+/f79/v/9/v79/v39/f/9/f79/f38/v78/f78/P36/P76+/36+vz3+fz29/r0+Pzz9/vz9Pfw9frs9Prx8fbs8fjs7fPn7vbm6PHh7Pfc6fbg5PDc3uzW5fTS4/PR4PHL3/LP2+3S1OfD2vDI0+W/1u210e20yuSpyurFyeCixuixwNyrtdOcwueYweaYvOCRvOSNuuOItuKBteGCsuF9seB7sOB+r998r+B7r+B7r956seB6sOB6sN56r+B6r996r955sd95sOB5sN54sN92sN95r+B3r9+gqs2XoMeCrNl6rt+FncN3rt9zrd5zqtyBkL5xh7dagrFbd61AdKdQcqg+bKVCZqIzWpsyZJ8fXZoaV5YXUpMXS5AOSo4FSY0ARIoHQ4kCQYgBQ4gBQYcAQ4oAQ4gAQ4cAQokAQogAQocAQYkAQYYBQIcBPoUAPoYEPYYAPYUAPIQAOYMANoEAM38ALXyQ2t8GAABIdUlEQVR42u29iV8a2fMF2sP8Am/kDRkQwRVBBCUghP0LKGsQkJ3HIkuQVQQURVYFzL/+6naDgqLJzCQxmXR9JhljQ9Pc01X3nKq6tzGMNNJI++mNMv5D2s8IHnWBgi0sMjHqApUcjZ/T3iyvr69zyHH4OW1tSyiRg8l2hDwmORw/H34SpfHA/MFstuzrFULSDX8yWxQrdKZg4vj4OHGcODCoZTxyTH4q/rKlPIjHXS6b1eH3uhzRY4OMR7LRn4e7YEKlKZ6I++12u9Pr9UejcZtRTiL4kxh1gbml3PfEo5YPH1zBoMvp81us8YRexlugkBj+FLalNoUCIavV5vR5HFarw+mwu4Iho2ydRPBncED21vv9eDzkN9tsUY/PYbPa7T6fxX4c18t5VBLAn8L/LKGAxx30frBZ/X6n3eXyHHld9mjCIFv/P3J8fnQD/hKNe9xWq99rsVgCPrcr6D70Wcy2YOLD/+Tr5AD94MZXHkDkdNutVp/P8+Eo4DsMAoBAY2wub/z4f6Qe/PH9D+Y/4J4u1+Ghx+n1BQJeu9XhCzkOj/yhuBPUBDlIPy5/YYB+98VDgWAQ1J/D4YjH/T6f32m1Hvk9h4cOfyCB1ARZm/hR8aMCf/GEfIceT9AbCNislngiaLN6fBbbhw9OG/hhMOiJGkk9+GMaBVsUKkxxT8jrDHpAORza4za97iAe9R057TZXwGs7PLTZLAkPqAkaCeAPCCBrS71vCbqDwaAT1LvV4Y+a5BK93Rvywb89icAHEPVmO4RRg4xHI8frxzOx0hQKRV1Bn81qdQcd8YBRweeIlR8SPq/TA1H1gzNqcfqd3sQHg5z3hhyvH8wWQT8cxmGWC/jB/YKBUMKv3GJjNLHeHAh5/R6rzWlx+AKg650J5IPkiP1o+gH4i98fDASAtlittlDgyCRjw8S4LFQn4tag22EHNeE4dNrtlkDgiFQTP5ix8fqfzxv0++02m9lsjydMyi0MCYY3O8BkQn6ny2V1uN12d9Blt4CaIHMyP5At0EA/2OKhQ2fQDt7n93v9oWO9kE0cfSNUx0M+MKcd9H0o5LdZ7b64kdSDP9D8B/wlGg36PBaXDQcw6Pe4lWtERyjIix21+dh/6HA6vU5XEGZBm92fcKDaBNkz+iPYn4tb6gOHx2K3u90e9OfQ4gpaTIrlewddFOodwSjQGL/X7nLZD/0f7JY46rL4i1T0P0ICBvc/gA3AAy9zHjrcwbhZJ7tvRKNibLEykAAEQ+CcQbczYLHZggmLQb5O1gdfX78j/mKzuZ3ue7MHnYkD5Q7jAWLsDaiJhMcaDflDQY/DZ7Hagt7EMZkX/VH0QygE9PLBLG4AUDztpNgiqImEA6KoC9SE3+/wHflCIa8RfJAcwVc1jlB5EPIFfLMAWhL7Cv6jV+7ozCiKOp02h9frBkno9yI1QerBV42f2JZ63xHyz8AHTMae2Jc91nkUoT4RQiUJl92JahOHRy6XB6kJchhfUb+LQb97QkHnNH4IzWPTEwAxxo76Q8J+CADaguPahPvYYyB98HX1gzvqdkcBQcdUBPVEj/fl/DnTpf5DEK9NhAIBpwdmRBdRm6CTevBVwicFrz/EXUGIjDMuaLNFTQrhkzdQFoVKT8Ln9Xo8UafT7XEeHXlDCZQXpZJ68PvbAtIPnpAvGAz5rdZpGeGxWKPAQv96CvkbsW4/EHJ6x7WJoyO7BeVFZXw6CeCr6IfDgD8YCqAEqPvwAUCHyxk90EmeriijUpCaiFq9fpsd6AzKbdvtoVAI+SA5nt+bv4B+iPt8/mDQY7PZLDMkxu+NWk1K3tOZDc+LHiRCXr/TYnW4XXZPyGWzJEKkmvj+BvzFGg943F5Uf/DO6EBgmr5gwvBuDXvqV1SmUAcUBtUm0MKXUMBls9oCx2SF9zsbqj/Eo1Gf2+2EYAjqfAZAp9MZjJv18nkIYtQdpfk45LDZvX6vyw8S0uIMJqykmvieRqUDf3HHD512XPQBerNCHmKj3YXIydpcfSDWm714bcLvhBf6jrx2e5xcAfod7Q3iLza3x0MACP42C6Dd77dZnf64zSBbmYfgsnC6NuE7wtdNuFFtgtSD38P90PrNA3vUfuh+xuxOUIJHR7bjuE62/hf1KZOh7+j2Ew5rNAgAOg59FqudqE2AmiAR/PYAovVjnqB3Ovcya040KwYCR25b1CBbn+NVDM6WOhFwWK0uVJvw+T0+32EokDDKeP9HAvjN8XuD6g+hoPt5OwRdYQeqabEeH6N5cJ4I2VEfEbUJq/2D1+lwHHqDibhezif14PfQD46Q33n4PIB2p8tm8wRCJoMpemyQzGEyFNRlgRIAPp8dAPxgtR66XS4PyWS+R/4F9EPQ6fT7nPbn8LP7Ar5DYKFKsUwdwrnoHL/iiJVHCbvPD1iHAk6Lx24FJmMm1cS3NQrGV5rjcZf9cwAGfC7nvgzj7urjx88giNREaFyb8H6I2s0W5weyZ/ub+5/aFA8F7cGAw/Esh3E7nN5QNIoae7GVXTVaGj9XD3KEynjiyOv1eWzODyBGQBYGUZcFieA3039MvP86FAwCgFb7swB6nE4XKPOdZXC8ZYku+pyipyI1EXf6HVaL03KId/5+IGoT5Fh/C1v4C/iLB/hLMBB0Wa125/M0xuKIH+sIAbGyq0scG+ZGUSpHqIs7bF6nHa2bODy0OO2owgs+SK4A/RbTHxP1f8ZDEOsOo6AT7C/w0GA0eqAYl5NWJDpPfK4PUkFNKA8SIb8v6HY4XG67J+iyWBJeA4ngtwCQzVcfWO1e96HvEK0fC7ktz86BQW/cqh839lJQFI3jPvjU/mQL9Uc+tHDC5fU6XRBEbVYLXpsgO36/uuH913iixemw2dwvKHmP25UwK3foE9ddkajjzzIZsfIwEYRZ0Iva7v1uCypkWEkm89WNs6U0e6KHRBXd7Ty0WF5IxbjsiX3lVE/MsuRZNUFZEKN19OPahOvQd2SxWfC8KOmCX3UCFKtNjqj7iw0AFE+9G9RE/NgoW5mnB+moZ9uGloT6Q0Gnz28GRR+IGmXk+sGv6X9C5X7U4XZ+MYDxmdZ6mAd3YR7UzVf0v++oJ7UJtwPt6WQPHqGd8Ugf/Gr6gb6l3gfx93z94akHzq6NoBBqQi+ZX+Hd0qHahM3psjkcPo/H5/N4AwmTnE/uZfF1bFGs3A+FQl7nlwJos87OgcQ8qIvPV/QUClOsPkrgnRk2i/eDHa9N4D3bpJr4CvYnG/IjUI6ZNglWgW//jo9YW8x/W6mQN1lfyI8rf0xxOGj/fEMV347SWyrbMLo0M6S7Xv/mgufLHELK2EJ5hTdcYKOn9GFKLZJbzV6x39Z4c5BbAYlkVPpDbJ8qgP8OHDO+RjGm0/UBz34cXwaA6RwRTzjRKyfM3Xaftjl3vzkQdzTX3ejChxON2Ie6d89LoFkfU0RZrrZZyF+NUM1Gd64pYNJK/4mACM0W63umS3zz/WiKfeK2S9NeOK88zXX6QZvZelFkchIBlN/pjxy22dSZ+nY284fuYUq8jR7yi4B48bYDjtj7y1fwRS9DLuaqyuHqbQHBJd/Xfc1j5NkG5d1+dJRdFrhlqHYpuljKd/Tr+aXdZ1bMPzn4puFv4DqpI0U2+dvBcAAAAASUVORK5CYII=';
+
+        const MembreteHSAIP = ({ titulo, codigo, campos }) => (
+            <div className="membrete-hsaip">
+                <div className="membrete-logo">
+                    {LOGO_HSAIP_URL ? (
+                        <img src={LOGO_HSAIP_URL} alt="Hospital San Ángel Inn Patriotismo" />
+                    ) : (
+                        <React.Fragment>
+                            <div className="barra"></div>
+                            <div>
+                                <div className="caja"><i className="fas fa-hand-sparkles"></i></div>
+                                <div className="marca">
+                                    <div className="h1">Hospital<sup>®</sup></div>
+                                    <div className="h2">San Ángel Inn</div>
+                                    <div className="h3">PATRIOTISMO</div>
+                                </div>
+                            </div>
+                        </React.Fragment>
+                    )}
+                </div>
+                <div className="membrete-datos">
+                    <p className="razon">Centro Hospitalario Patriotismo, S.A. de C.V.</p>
+                    <p>Av. Patriotismo No. 67 Col. San Juan, Alcaldía Benito Juárez</p>
+                    <p>C.P. 03730, Ciudad de México</p>
+                    <p>Teléfono (55) 47 70 48 70</p>
+                    <p>www.hospitalsanangelinn.mx</p>
+                    <p>Lic. Sanitaria: 16-AM-09-014-0006</p>
+                </div>
+                <div className="membrete-titulo">
+                    <h1>{titulo}</h1>
+                    <p className="codigo">{codigo}</p>
+                    {(campos || []).map(([etiqueta, valor]) => (
+                        <div className="membrete-campo" key={etiqueta}>
+                            <span>{etiqueta}:</span><strong>{valor}</strong>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
+        // ============================================================================
+        // PROGRAMA DE REVISIÓN SEMANAL (Calendario FOR-INB-008)
+        // ============================================================================
+        const PROGRAMA_REVISION = {
+            diarias: ['QUIROFANO', 'QX', 'CEYE', 'C.E.Y.E', 'HEMODINAMIA', 'HEMO'],
+            porDia: {
+                0: ['UTIA', 'UTI ', 'IMAGEN', 'IMAGENOLOGIA'],
+                1: ['LABORATORIO', 'LABO', '5TO', '5°', 'QUINTO'],
+                2: ['TOCO'],
+                3: ['URGENCIA', 'URG', 'RESPIRATORIA', 'T.RESP'],
+                4: ['ENDOSCOP', 'ENDO', '4TO', '4°', 'CUARTO'],
+                5: ['CUNERO', '2DO', '2°', 'SEGUNDO'],
+                6: ['UCIN', 'UCI']
+            }
+        };
+
+        const normalizarTexto = (t) => String(t || '')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase().trim();
+
+        const detectarFrecuenciaArea = (area) => {
+            const a = normalizarTexto(area);
+            if (!a) return null;
+            if (PROGRAMA_REVISION.diarias.some(f => a.includes(normalizarTexto(f)))) return 'D';
+            for (const dia of Object.keys(PROGRAMA_REVISION.porDia)) {
+                if (PROGRAMA_REVISION.porDia[dia].some(f => a.includes(normalizarTexto(f)))) return parseInt(dia, 10);
+            }
+            return null;
+        };
+
+        const NOMBRES_DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const LETRAS_DIAS = ['D', 'L', 'M', 'Mi', 'J', 'V', 'S'];
+        const NOMBRES_MESES_LARGOS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+        const diasProgramados = (mesStr, frecuencia) => {
+            const [anio, mes] = String(mesStr || '').split('-').map(n => parseInt(n, 10));
+            if (!anio || !mes) return [];
+            const total = new Date(anio, mes, 0).getDate();
+            const dias = [];
+            for (let d = 1; d <= total; d++) {
+                if (frecuencia === 'D' || new Date(anio, mes - 1, d).getDay() === frecuencia) dias.push(d);
+            }
+            return dias;
+        };
+
+        // ============================================================================
+        // PANTALLA DE ACCESO
+        // ============================================================================
+        const PantallaAcceso = ({ onAcceso }) => {
+            const [pin, setPin] = useState('');
+            const [verificando, setVerificando] = useState(false);
+            const [errorAcceso, setErrorAcceso] = useState(null);
+
+            const entrar = async (e) => {
+                e.preventDefault();
+                const limpio = pin.trim();
+                if (!limpio) { setErrorAcceso('Escribe tu PIN de acceso.'); return; }
+                setVerificando(true);
+                setErrorAcceso(null);
+                try {
+                    const resp = await jsonpRequest({ action: 'login', pin: limpio });
+                    if (resp && resp.ok && resp.usuario) {
+                        onAcceso(limpio, resp.usuario);
+                    } else {
+                        setErrorAcceso('Respuesta inesperada del servidor.');
+                    }
+                } catch (err) {
+                    const msg = String(err.message || '');
+                    setErrorAcceso(msg.indexOf('ACCESO_DENEGADO') > -1
+                        ? 'PIN incorrecto. El intento quedó registrado en la bitácora de accesos.'
+                        : 'No se pudo verificar el acceso: ' + msg);
+                } finally {
+                    setVerificando(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans">
+                    <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-8 animate-in fade-in zoom-in-95 duration-300">
+                        <div className="flex flex-col items-center mb-6">
+                            <div className="bg-blue-500 p-3 rounded-xl w-14 h-14 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/20">
+                                <i className="fas fa-thermometer-half text-white text-2xl"></i>
+                            </div>
+                            <h1 className="text-2xl font-bold text-white tracking-tight">MediCMMS</h1>
+                            <p className="text-xs text-slate-400 mt-1">Ingeniería Biomédica · HSAIP</p>
+                        </div>
+
+                        <form onSubmit={entrar} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                                    <i className="fas fa-key mr-2 text-blue-400"></i>PIN de acceso
+                                </label>
+                                <input
+                                    type="password"
+                                    value={pin}
+                                    onChange={(e) => setPin(e.target.value)}
+                                    autoFocus
+                                    autoComplete="current-password"
+                                    placeholder="••••••••"
+                                    className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-lg text-white text-center text-lg tracking-widest outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition"
+                                />
+                            </div>
+
+                            {errorAcceso && (
+                                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-300 flex items-start gap-2">
+                                    <i className="fas fa-triangle-exclamation mt-0.5"></i>
+                                    <span>{errorAcceso}</span>
+                                </div>
+                            )}
+
+                            <button type="submit" disabled={verificando}
+                                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                                {verificando
+                                    ? (<><i className="fas fa-circle-notch fa-spin"></i> Verificando...</>)
+                                    : (<><i className="fas fa-right-to-bracket"></i> Entrar</>)}
+                            </button>
+                        </form>
+
+                        <p className="text-[11px] text-slate-500 mt-6 text-center leading-relaxed">
+                            <i className="fas fa-shield-halved mr-1"></i>
+                            Cada intento de acceso queda registrado con fecha, hora y resultado.
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        // ============================================================================
+        // EXPEDIENTE DIGITAL DEL EQUIPO (Google Drive)
+        // ============================================================================
+        const TIPOS_ORDEN = {
+            OSMP: { label: 'Preventivo',  icono: 'fa-calendar-check', clase: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+            OSMC: { label: 'Correctivo',  icono: 'fa-screwdriver-wrench', clase: 'bg-red-100 text-red-800 border-red-300' },
+            OSI:  { label: 'Instalación', icono: 'fa-plug', clase: 'bg-blue-100 text-blue-800 border-blue-300' },
+            OSB:  { label: 'Baja',        icono: 'fa-box-archive', clase: 'bg-gray-200 text-gray-700 border-gray-300' },
+            OSA:  { label: 'Asistencia',  icono: 'fa-headset', clase: 'bg-amber-100 text-amber-800 border-amber-300' }
+        };
+
+        const ExpedienteEquipo = ({ equipo }) => {
+            const [docs, setDocs] = useState(null);
+            const [cargandoDocs, setCargandoDocs] = useState(true);
+            const [errorDocs, setErrorDocs] = useState(null);
+            const [filtroTipo, setFiltroTipo] = useState('TODAS');
+            const [visor, setVisor] = useState(null);
+
+            const cargarExpediente = async (forzar) => {
+                if (!equipo.numeroInventario) {
+                    setErrorDocs('Este registro no tiene número de inventario; no es posible localizar su carpeta en Drive.');
+                    setCargandoDocs(false);
+                    return;
+                }
+                if (!forzar && CACHE_EXPEDIENTES.has(equipo.numeroInventario)) {
+                    setDocs(CACHE_EXPEDIENTES.get(equipo.numeroInventario));
+                    setErrorDocs(null);
+                    setCargandoDocs(false);
+                    return;
+                }
+                setCargandoDocs(true);
+                setErrorDocs(null);
+                try {
+                    const r = await jsonpConReintentos({
+                        action: 'getDocumentosEquipo',
+                        inventario: equipo.numeroInventario,
+                        refrescar: forzar ? '1' : '0'   
+                    });
+                    setDocs(r);
+                    if (r && r.encontrada) CACHE_EXPEDIENTES.set(equipo.numeroInventario, r);
+                } catch (err) {
+                    setErrorDocs(err.message || 'No se pudo consultar el expediente en Drive.');
+                } finally {
+                    setCargandoDocs(false);
+                }
+            };
+
+            useEffect(() => {
+                setDocs(null);
+                setFiltroTipo('TODAS');
+                cargarExpediente();
+                return () => setVisor(v => { if (v && v.url) URL.revokeObjectURL(v.url); return null; });
+            }, [equipo.numeroInventario]);
+
+            const abrirDocumento = async (archivo) => {
+                setVisor({ nombre: archivo.nombre, cargando: true });
+                try {
+                    const r = await jsonpRequest({ action: 'getArchivo', id: archivo.id }, 60000);
+                    if (r && r.ok && r.base64) {
+                        const bin = atob(r.base64);
+                        const bytes = new Uint8Array(bin.length);
+                        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                        const blob = new Blob([bytes], { type: r.mime || 'application/octet-stream' });
+                        setVisor({ nombre: r.nombre, url: URL.createObjectURL(blob), mime: r.mime || '' });
+                    } else {
+                        setVisor(null);
+                        if (r && r.motivo) alert(r.motivo);
+                        window.open((r && r.url) || archivo.url, '_blank');
+                    }
+                } catch (err) {
+                    setVisor(null);
+                    window.open(archivo.url, '_blank');
+                }
+            };
+
+            const cerrarVisor = () => {
+                setVisor(v => { if (v && v.url) URL.revokeObjectURL(v.url); return null; });
+            };
+
+            const conteosPorTipo = useMemo(() => {
+                const c = { TODAS: 0, OSMP: 0, OSMC: 0, OSI: 0, OSB: 0, OSA: 0 };
+                ((docs && docs.ordenes) || []).forEach(o => {
+                    c.TODAS++;
+                    if (c[o.tipo] !== undefined) c[o.tipo]++;
+                });
+                return c;
+            }, [docs]);
+
+            const ordenesVisibles = useMemo(() => {
+                const lista = (docs && docs.ordenes) || [];
+                return filtroTipo === 'TODAS' ? lista : lista.filter(o => o.tipo === filtroTipo);
+            }, [docs, filtroTipo]);
+
+            const FilaDocumento = ({ archivo, mostrarTipo }) => {
+                const t = TIPOS_ORDEN[archivo.tipo];
+                return (
+                    <tr className="border-b border-gray-50 hover:bg-blue-50/40 transition text-sm">
+                        {mostrarTipo && (
+                            <td className="p-3 whitespace-nowrap">
+                                <span className={`px-2.5 py-1 rounded-lg border font-bold text-[11px] uppercase tracking-wider ${t ? t.clase : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                    <i className={`fas ${t ? t.icono : 'fa-file'} mr-1.5`}></i>{t ? t.label : archivo.tipo}
+                                </span>
+                            </td>
+                        )}
+                        <td className="p-3 whitespace-nowrap font-bold text-gray-700">
+                            {archivo.fecha
+                                ? (<span>{archivo.fecha}{archivo.hora && <span className="ml-1.5 text-gray-400 font-medium text-xs"><i className="far fa-clock mr-0.5"></i>{archivo.hora}</span>}</span>)
+                                : <span className="text-gray-400 font-normal italic">Sin fecha</span>}
+                        </td>
+                        <td className="p-3 text-gray-600 max-w-[320px] truncate" title={archivo.nombre}>{archivo.nombre}</td>
+                        <td className="p-3 whitespace-nowrap text-right">
+                            <button onClick={() => abrirDocumento(archivo)}
+                                className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition text-xs font-bold shadow-sm">
+                                <i className="fas fa-eye"></i> Ver
+                            </button>
+                            <a href={archivo.url} target="_blank" rel="noopener noreferrer" title="Abrir en Google Drive"
+                                className="inline-flex items-center gap-1.5 ml-2 border border-gray-200 text-gray-500 px-3 py-1.5 rounded-lg hover:bg-gray-50 hover:text-gray-700 transition text-xs font-bold">
+                                <i className="fab fa-google-drive"></i>
+                            </a>
+                        </td>
+                    </tr>
+                );
+            };
+
+            return (
+                <div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                            <i className="fas fa-folder-open mr-2"></i>Expediente Digital · Historial de Mantenimientos
+                            {docs && docs.encontrada && (
+                                <span className="ml-2 text-[10px] normal-case font-medium text-gray-400">Carpeta: {docs.carpeta}</span>
+                            )}
+                        </p>
+                        <div className="flex flex-wrap gap-2 print-hidden">
+                            {docs && docs.encontrada && docs.carpetaUrl && (
+                                <a href={docs.carpetaUrl} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-2 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition shadow-sm font-medium text-sm">
+                                    <i className="fab fa-google-drive"></i> Abrir carpeta
+                                </a>
+                            )}
+                            <button onClick={() => cargarExpediente(true)} disabled={cargandoDocs}
+                                className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition shadow-sm font-medium text-sm disabled:opacity-40">
+                                <i className={`fas fa-sync-alt ${cargandoDocs ? 'fa-spin' : ''}`}></i> Actualizar
+                            </button>
+                        </div>
+                    </div>
+
+                    {cargandoDocs && (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center text-gray-400 text-sm">
+                            <i className="fas fa-circle-notch fa-spin mr-2"></i> Consultando la carpeta del equipo en Google Drive...
+                        </div>
+                    )}
+
+                    {!cargandoDocs && errorDocs && (
+                        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg text-sm text-red-700">
+                            <p className="font-bold mb-1">No se pudo consultar el expediente</p>
+                            <p>{errorDocs}</p>
+                        </div>
+                    )}
+
+                    {!cargandoDocs && !errorDocs && docs && !docs.encontrada && (
+                        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg text-sm text-amber-800">
+                            <p className="font-bold mb-1"><i className="fas fa-folder-minus mr-2"></i>Carpeta no localizada en Drive</p>
+                            <p>{docs.mensaje}</p>
+                        </div>
+                    )}
+
+                    {!cargandoDocs && !errorDocs && docs && docs.encontrada && (
+                        <div className="space-y-4">
+                            {docs.manuales.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wider mr-1"><i className="fas fa-book mr-1"></i> Manuales:</span>
+                                    {docs.manuales.map(m => (
+                                        <button key={m.id} onClick={() => abrirDocumento(m)} title={m.nombre}
+                                            className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition text-xs font-bold max-w-[260px]">
+                                            <i className="fas fa-book-open"></i><span className="truncate">{m.nombre}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-2 print-hidden">
+                                {['TODAS', 'OSMP', 'OSMC', 'OSI', 'OSB', 'OSA'].map(t => {
+                                    const activo = filtroTipo === t;
+                                    const etiqueta = t === 'TODAS' ? 'Todas' : (TIPOS_ORDEN[t] ? TIPOS_ORDEN[t].label : t);
+                                    return (
+                                        <button key={t} onClick={() => setFiltroTipo(t)} disabled={t !== 'TODAS' && conteosPorTipo[t] === 0}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition disabled:opacity-30 disabled:cursor-not-allowed ${activo ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'}`}>
+                                            {etiqueta} <span className={activo ? 'text-blue-100' : 'text-gray-400'}>({conteosPorTipo[t]})</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="sticky top-0">
+                                            <tr className="bg-gray-50 text-gray-500 text-[11px] uppercase tracking-wider">
+                                                <th className="p-3 font-bold border-b">Tipo</th>
+                                                <th className="p-3 font-bold border-b">Fecha</th>
+                                                <th className="p-3 font-bold border-b">Orden de Servicio</th>
+                                                <th className="p-3 font-bold border-b text-right">Documento</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {ordenesVisibles.length === 0 ? (
+                                                <tr><td colSpan="4" className="p-6 text-center text-gray-400 text-sm italic">
+                                                    {conteosPorTipo.TODAS === 0
+                                                        ? 'La carpeta no contiene órdenes de servicio reconocibles (prefijo OSMP / OSMC / OSI / OSB / OSA, o formato "OS-Preventivo-...", "OS-Correctivo-...", "OS-Instalacion-...", "OS-Baja-...", "OS-Asistencia-...").'
+                                                        : 'No hay órdenes de este tipo.'}
+                                                </td></tr>
+                                            ) : (
+                                                ordenesVisibles.map(o => <FilaDocumento key={o.id} archivo={o} mostrarTipo={true} />)
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {docs.otros.length > 0 && (
+                                <details className="text-sm">
+                                    <summary className="cursor-pointer text-gray-500 font-medium hover:text-gray-700 select-none">
+                                        <i className="fas fa-paperclip mr-1"></i> Otros documentos de la carpeta ({docs.otros.length})
+                                    </summary>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {docs.otros.map(a => (
+                                            <button key={a.id} onClick={() => abrirDocumento(a)} title={a.nombre}
+                                                className="inline-flex items-center gap-2 bg-gray-50 text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition text-xs font-medium max-w-[260px]">
+                                                <i className="fas fa-file"></i><span className="truncate">{a.nombre}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </details>
+                            )}
+                        </div>
+                    )}
+
+                    {visor && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 print-hidden" onClick={cerrarVisor}>
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+                                onClick={(e) => e.stopPropagation()}>
+                                <div className="px-5 py-3 border-b border-gray-100 flex justify-between items-center gap-3 bg-gray-50">
+                                    <p className="font-bold text-gray-800 text-sm truncate" title={visor.nombre}>
+                                        <i className="fas fa-file-lines mr-2 text-blue-500"></i>{visor.nombre}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        {visor.url && (
+                                            <a href={visor.url} download={visor.nombre}
+                                                className="text-xs font-bold text-blue-600 border border-blue-200 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">
+                                                <i className="fas fa-download mr-1"></i> Descargar
+                                            </a>
+                                        )}
+                                        <button onClick={cerrarVisor} className="text-gray-400 hover:text-gray-700 text-xl font-bold px-2">✕</button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 bg-gray-100 flex items-center justify-center overflow-hidden">
+                                    {visor.cargando ? (
+                                        <div className="text-gray-500 text-sm flex flex-col items-center gap-3">
+                                            <i className="fas fa-circle-notch fa-spin text-3xl text-blue-500"></i>
+                                            Descargando documento del expediente...
+                                        </div>
+                                    ) : String(visor.mime).indexOf('image/') === 0 ? (
+                                        <img src={visor.url} alt={visor.nombre} className="max-w-full max-h-full object-contain" />
+                                    ) : String(visor.mime).indexOf('pdf') > -1 ? (
+                                        <iframe src={visor.url} title={visor.nombre} className="w-full h-full border-0"></iframe>
+                                    ) : (
+                                        <div className="text-center text-gray-500 text-sm p-8">
+                                            <i className="fas fa-file-circle-question text-4xl text-gray-300 mb-3"></i>
+                                            <p>Este formato no tiene vista previa integrada.</p>
+                                            <a href={visor.url} download={visor.nombre} className="text-blue-600 font-bold hover:underline mt-2 inline-block">
+                                                Descargar {visor.nombre}
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================================================
+        // LÓGICA PRINCIPAL CMMS (INVENTARIO Y CALENDARIOS)
+        // ============================================================================
+        const CMMSHospitalario = () => {
+          const [activeTab, setActiveTab] = useState('dashboard');
+          const [inventarioTab, setInventarioTab] = useState('Propio');
+          const [equipos, setEquipos] = useState([]);
+          const [isSyncing, setIsSyncing] = useState(false);
+          const [syncError, setSyncError] = useState(null);
+          const [ultimaSync, setUltimaSync] = useState(null);
+          const [bitacora, setBitacora] = useState([]);
+          
+          const [indicadores, setIndicadores] = useState([]);
+          const [usuarioActivo, setUsuarioActivo] = useState(SESION.usuario);
+          
+          const [predMes, setPredMes] = useState(() => {
+            const h = new Date();
+            return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
+          });
+          const [predArea, setPredArea] = useState('');
+          const [predOrigen, setPredOrigen] = useState('Todos');
+          const [predFrecuencia, setPredFrecuencia] = useState('D');
+          const [predDatos, setPredDatos] = useState({});   
+          const [predCargando, setPredCargando] = useState(false);
+          
+          const [tecnicoActivo, setTecnicoActivo] = useState(() => {
+            try { return window.localStorage.getItem('cmms_tecnico') || ''; } catch (e) { return ''; }
+          });
+          
+          useEffect(() => {
+            try { window.localStorage.setItem('cmms_tecnico', tecnicoActivo); } catch (e) {}
+          }, [tecnicoActivo]);
+          
+          const [showAddEquipo, setShowAddEquipo] = useState(false);
+          
+          const [searchTerm, setSearchTerm] = useState('');
+          const [filterEstatus, setFilterEstatus] = useState('Todos');
+          const [filterUbicacion, setFilterUbicacion] = useState('Todas');
+          const [paginaActual, setPaginaActual] = useState(0);
+          
+          const [filterUbicacionCal, setFilterUbicacionCal] = useState('Todas');
+          const [filterMesCal, setFilterMesCal] = useState('Todos');
+          const [searchControlCal, setSearchControlCal] = useState('');
+          const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+
+          const [selectedEquipo, setSelectedEquipo] = useState(null);
+          const [isEditing, setIsEditing] = useState(false);
+          const [equipoEditado, setEquipoEditado] = useState(null);
+          
+          const estadoInicialEquipo = {
+            origen: inventarioTab, numero: '', numeroInventario: '', estatus: 'En Servicio', motivoFueraServicio: '', nombre: '', marca: '', polizaMantenimiento: 'NO', modelo: '', numeroSerie: '', fabricante: '', nivelRiesgo: 'I', ubicacion: '', fechaAlta: '', proveedorMantenimiento: '', descripcion: '', tipoTecnologia: 'Equipo Médico', frecuenciaMantenimiento: '', ultimoMantenimiento: '', proximoMantenimiento: '', historialEjecuciones: ''
+          };
+          const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
+
+          useEffect(() => {
+            if (!usuarioActivo) return;
+            const cacheado = CACHE_LOCAL.leer();
+            if (cacheado && cacheado.datos) {
+              setEquipos(cacheado.datos.equipos || []);
+              setIndicadores(cacheado.datos.indicadores || []);
+              setBitacora(cacheado.datos.bitacora || []);
+              if (cacheado.datos.ultimaSync) setUltimaSync(cacheado.datos.ultimaSync + ' (guardado en este equipo)');
+            }
+            handleSyncSheets();
+          }, [usuarioActivo]);
+
+          const esAccesoDenegado = (err) =>
+            String((err && err.message) || '').indexOf('ACCESO_DENEGADO') > -1;
+
+          const cerrarSesion = () => {
+            SESION.limpiar();
+            CACHE_LOCAL.limpiar();       
+            CACHE_EXPEDIENTES.clear();
+            setUsuarioActivo('');
+            setEquipos([]);
+            setIndicadores([]);
+            setBitacora([]);
+            setSelectedEquipo(null);
+            setSyncError(null);
+          };
+
+          const equiposFiltrados = useMemo(() => {
+            return equipos.filter(e => {
+              const matchHoja = e.origen === inventarioTab;
+              const matchEstatus = filterEstatus === 'Todos' ||
+                (filterEstatus === 'Fuera de Servicio' ? estaFueraServicio(e) : estaEnServicio(e));
+              const matchUbicacion = filterUbicacion === 'Todas' || e.ubicacion === filterUbicacion;
+              if (!searchTerm) return matchHoja && matchEstatus && matchUbicacion;
+              const s = searchTerm.toLowerCase();
+              return matchHoja && matchEstatus && matchUbicacion && (
+                String(e.nombre || '').toLowerCase().includes(s) || String(e.numeroInventario || '').toLowerCase().includes(s) || String(e.marca || '').toLowerCase().includes(s) || String(e.numeroSerie || '').toLowerCase().includes(s)
+              );
+            });
+          }, [equipos, inventarioTab, searchTerm, filterEstatus, filterUbicacion]);
+
+          const totalPaginasInventario = Math.max(1, Math.ceil(equiposFiltrados.length / INVENTARIO_PAGE_SIZE));
+          const paginaSegura = Math.min(paginaActual, totalPaginasInventario - 1);
+          const equiposPagina = useMemo(() => {
+              const inicio = paginaSegura * INVENTARIO_PAGE_SIZE;
+              return equiposFiltrados.slice(inicio, inicio + INVENTARIO_PAGE_SIZE);
+          }, [equiposFiltrados, paginaSegura]);
+
+          const ubicacionesUnicas = useMemo(() => {
+              const locs = equipos.filter(e => e.origen === inventarioTab).map(e => e.ubicacion).filter(u => u && u.trim() !== '');
+              return ['Todas', ...Array.from(new Set(locs)).sort((a, b) => a.localeCompare(b, 'es'))];
+          }, [equipos, inventarioTab]);
+
+          const siguienteFolioPreview = useMemo(
+              () => previsualizarSiguienteFolio(nuevoEquipo.origen, equipos),
+              [nuevoEquipo.origen, equipos]
+          );
+
+          const equiposCalendario = useMemo(() => {
+              return equipos.filter(e => {
+                  if (e.origen !== inventarioTab) return false;
+                  if (!e.frecuenciaMantenimiento || e.frecuenciaMantenimiento === '') return false;
+                  if (esBajaDefinitiva(e)) return false;
+
+                  if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
+                  
+                  if (searchControlCal) {
+                      const s = searchControlCal.toLowerCase();
+                      if (!String(e.numeroInventario || '').toLowerCase().includes(s)) return false;
+                  }
+
+                  if (filterMesCal !== 'Todos') {
+                      const monthIdx = parseInt(filterMesCal, 10);
+                      const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
+                      if (!programados.has(monthIdx)) return false;
+                  }
+                  return true;
+              });
+          }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, searchControlCal, calendarYear]);
+
+          const handleSyncSheets = async () => {
+            setIsSyncing(true);
+            setSyncError(null);
+            if (!GOOGLE_SHEETS_WEBAPP_URL) {
+              setSyncError('No hay URL de backend configurada.');
+              setIsSyncing(false);
+              return;
+            }
+            try {
+              const data = await jsonpConReintentos({ action: 'getAll' });
+
+              const procesarHoja = (arr, origen) => (arr || [])
+                .filter(e => e.numeroInventario || e.nombre)
+                .map(e => ({
+                  ...e,
+                  origen,
+                  id: e.id ? String(e.id) : `${origen}-FILA-${e._fila}`
+                }));
+
+              const consolidado = [
+                ...procesarHoja(data.propio, 'Propio'),
+                ...procesarHoja(data.comodato, 'Comodato'),
+                ...procesarHoja(data.renta, 'Renta')
+              ];
+
+              setEquipos(consolidado);
+              setBitacora(data.bitacora || []);
+              setIndicadores(data.indicadores || []); 
+              setUltimaSync(data.sincronizado || new Date().toLocaleString('es-MX'));
+
+              CACHE_LOCAL.guardar({
+                equipos: consolidado,
+                indicadores: data.indicadores || [],
+                bitacora: data.bitacora || [],
+                ultimaSync: data.sincronizado || ''
+              });
+
+              if (consolidado.length === 0) {
+                setSyncError('El backend respondió correctamente, pero no devolvió equipos. Verifica los nombres de las hojas (Propio, Comodato, Renta) y que tengan datos.');
+              }
+            } catch (error) {
+              console.error(error);
+              if (esAccesoDenegado(error)) { cerrarSesion(); return; }
+              setSyncError(error.message || 'Error desconocido al sincronizar.');
+            } finally {
+              setIsSyncing(false);
+            }
+          };
+
+          const directSaveToSheets = async (equipo, estadoPrevio) => {
+            if (!GOOGLE_SHEETS_WEBAPP_URL) return false;
+            setIsSyncing(true);
+            setSyncError(null);
+            try {
+              await jsonpConReintentos({
+                action: 'save',
+                payload: JSON.stringify({
+                  action: 'edit',
+                  data: equipo,
+                  sheetName: equipo.origen,
+                  originalInventario: equipo.numeroInventario,
+                  fila: equipo._fila
+                })
+              });
+              setUltimaSync(new Date().toLocaleString('es-MX'));
+              return true;
+            } catch (error) {
+              console.error(error);
+              if (estadoPrevio) setEquipos(estadoPrevio);
+              if (esAccesoDenegado(error)) { cerrarSesion(); return false; }
+              setSyncError('No se guardó en Google Sheets: ' + error.message);
+              return false;
+            } finally {
+              setIsSyncing(false);
+            }
+          };
+
+          const handleUpdateEquipo = async (e) => {
+            e.preventDefault();
+            const estadoPrevio = equipos;
+            setEquipos(equipos.map(eq => eq.id === equipoEditado.id ? equipoEditado : eq));
+            setSelectedEquipo(equipoEditado);
+            setIsEditing(false);
+            await directSaveToSheets(equipoEditado, estadoPrevio);
+          };
+
+          const handleAddEquipo = async (e) => {
+            e.preventDefault();
+
+            if (!nuevoEquipo.nombre || !nuevoEquipo.ubicacion) {
+              setSyncError('El nombre del equipo y el área/ubicación son obligatorios.');
+              return;
+            }
+            if (!nuevoEquipo.nivelRiesgo) {
+              setSyncError('Selecciona un nivel de riesgo (I, II o III).');
+              return;
+            }
+
+            setIsSyncing(true);
+            setSyncError(null);
+            try {
+              const resultado = await jsonpConReintentos({
+                action: 'save',
+                payload: JSON.stringify({ action: 'add', data: nuevoEquipo, sheetName: nuevoEquipo.origen })
+              });
+              const folioAsignado = resultado.numeroInventario || siguienteFolioPreview;
+              const matchNum = String(folioAsignado).match(/(\d+)\s*$/);
+              const equipoGuardar = {
+                ...nuevoEquipo,
+                numeroInventario: folioAsignado,
+                numero: matchNum ? parseInt(matchNum[1], 10) : '',
+                id: resultado.id || `INV-${folioAsignado}`
+              };
+              setEquipos([...equipos, equipoGuardar]);
+              setShowAddEquipo(false);
+              setNuevoEquipo(estadoInicialEquipo);
+              setUltimaSync(new Date().toLocaleString('es-MX'));
+            } catch (error) {
+              setSyncError('No se pudo dar de alta el equipo: ' + error.message);
+            } finally {
+              setIsSyncing(false);
+            }
+          };
+
+          const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
+              const strY = year.toString();
+              const strM = (monthIndex + 1).toString().padStart(2, '0');
+              const targetStr = `${strY}-${strM}`;
+
+              let historialArr = limpiarHistorial(equipo.historialEjecuciones);
+              if (historialArr.includes(targetStr)) { historialArr = historialArr.filter(h => h !== targetStr); } 
+              else { historialArr.push(targetStr); }
+              historialArr = [...new Set(historialArr)];
+
+              const ejecutando = historialArr.includes(targetStr);
+              const updatedEquipo = { ...equipo, historialEjecuciones: historialArr.join(',') };
+              const estadoPrevio = equipos;
+              setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
+
+              directSaveToSheets(updatedEquipo, estadoPrevio).then(ok => {
+                if (ok && ejecutando) {
+                  jsonpConReintentos({
+                    action: 'save',
+                    payload: JSON.stringify({
+                      action: 'bitacora',
+                      data: {
+                        numeroInventario: equipo.numeroInventario,
+                        nombreEquipo: equipo.nombre,
+                        origen: equipo.origen,
+                        ubicacion: equipo.ubicacion,
+                        tipo: 'MP',
+                        periodo: targetStr,
+                        tecnico: tecnicoActivo || usuarioActivo || 'No especificado',
+                        estatusFinal: 'Concluido'
+                      }
+                    })
+                  }).catch(err => console.error('Bitácora:', err));
+                }
+              });
+          };
+
+          const getEstatusColor = (estatus) => {
+            const status = estatus ? estatus.toLowerCase() : '';
+            if (status.includes('servicio') && !status.includes('fuera')) return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+            if (status.includes('fuera de servicio')) return 'bg-red-100 text-red-800 border-red-300';
+            return 'bg-gray-100 text-gray-800 border-gray-300'; 
+          };
+
+          // ============================================================================
+          // ETIQUETA DE IDENTIFICACIÓN DEL EQUIPO
+          // ============================================================================
+          const EtiquetaEquipo = ({ equipo }) => {
+            const [imgUrl, setImgUrl] = useState(null);
+            const [errorEtiqueta, setErrorEtiqueta] = useState(null);
+
+            useEffect(() => {
+              let vigente = true;
+              setImgUrl(null);
+              setErrorEtiqueta(null);
+              generarEtiqueta(equipo)
+                .then(url => { if (vigente) setImgUrl(url); })
+                .catch(err => { if (vigente) setErrorEtiqueta(err.message); });
+              return () => { vigente = false; };
+            }, [equipo.id, equipo.nombre, equipo.marca, equipo.modelo,
+                equipo.numeroSerie, equipo.ubicacion, equipo.numeroInventario]);
+
+            const nombreArchivo = () => {
+              const inv = String(equipo.numeroInventario || 'SIN-INV')
+                .replace(/[^A-Za-z0-9_-]/g, '');
+              return `Etiqueta_${inv}.png`;
+            };
+
+            const descargar = () => {
+              if (!imgUrl) return;
+              const a = document.createElement('a');
+              a.href = imgUrl;
+              a.download = nombreArchivo();
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            };
+
+            const imprimir = () => {
+              if (!imgUrl) return;
+              const v = window.open('', '_blank', 'width=900,height=600');
+              if (!v) {
+                setErrorEtiqueta('El navegador bloqueó la ventana emergente. Permite las ventanas emergentes para imprimir.');
+                return;
+              }
+              v.document.write(
+                '<html><head><title>' + nombreArchivo() + '</title>' +
+                '<style>' +
+                '@page{size:' + ETQ_ANCHO_MM + 'mm ' + ETQ_ALTO_MM + 'mm;margin:0}' +
+                'html,body{margin:0;padding:0}' +
+                'img{width:' + ETQ_ANCHO_MM + 'mm;height:' + ETQ_ALTO_MM + 'mm;display:block;' +
+                'image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges}' +
+                '</style></head><body>' +
+                '<img src="' + imgUrl + '" onload="window.focus();window.print();window.close();">' +
+                '</body></html>'
+              );
+              v.document.close();
+            };
+
+            return (
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                    <i className="fas fa-tag mr-2"></i>Etiqueta de Identificación
+                    <span className="ml-2 text-[10px] normal-case font-medium text-gray-400">
+                      {ETQ_ANCHO_MM} × {ETQ_ALTO_MM} mm · Zebra 300 dpi
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap gap-2 print-hidden">
+                    <button onClick={descargar} disabled={!imgUrl}
+                      className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                      <i className="fas fa-download"></i> Descargar PNG
+                    </button>
+                    <button onClick={imprimir} disabled={!imgUrl}
+                      className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition shadow-sm font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                      <i className="fas fa-print"></i> Imprimir
+                    </button>
+                  </div>
+                </div>
+
+                {errorEtiqueta && (
+                  <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded-lg text-sm text-red-700">
+                    {errorEtiqueta}
+                  </div>
+                )}
+
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex justify-center shadow-inner">
+                  {imgUrl ? (
+                    <img src={imgUrl} alt={'Etiqueta ' + (equipo.numeroInventario || '')}
+                      className="h-auto rounded shadow-md border border-gray-300 bg-white"
+                      style={{ width: '380px', maxWidth: '100%' }} />
+                  ) : !errorEtiqueta ? (
+                    <div className="py-12 text-gray-400 text-sm flex items-center gap-2">
+                      <i className="fas fa-circle-notch fa-spin"></i> Generando etiqueta...
+                    </div>
+                  ) : null}
+                </div>
+
+                <p className="text-[11px] text-gray-400 mt-2 text-center">
+                  El código QR dirige a la base de datos de equipos del CMMS.
+                  Al imprimir, configura el driver Zebra en <strong>100% de escala</strong> (sin «ajustar a página»).
+                </p>
+              </div>
+            );
+          };
+
+          const BannerEstado = () => {
+            if (syncError) {
+              return (
+                <div className="print-hidden bg-red-50 border-l-4 border-red-500 p-4 rounded-lg flex items-start gap-3">
+                  <i className="fas fa-triangle-exclamation text-red-600 mt-1"></i>
+                  <div className="flex-1">
+                    <p className="font-bold text-red-800 text-sm">Error de sincronización</p>
+                    <p className="text-red-700 text-sm mt-1">{syncError}</p>
+                  </div>
+                  <button onClick={handleSyncSheets} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 font-medium whitespace-nowrap">Reintentar</button>
+                </div>
+              );
+            }
+            if (equipos.length > 0) {
+              return (
+                <div className="print-hidden bg-emerald-50 border-l-4 border-emerald-500 p-3 rounded-lg flex items-center gap-3 text-sm">
+                  <i className="fas fa-circle-check text-emerald-600"></i>
+                  <span className="text-emerald-800 font-medium">
+                    {equipos.length} equipos sincronizados{ultimaSync ? ` · ${ultimaSync}` : ''}
+                  </span>
+                </div>
+              );
+            }
+            return null;
+          };
+
+          // ==================================================================
+          // [REV-09] MANTENIMIENTOS PREDICTIVOS — lógica
+          // ==================================================================
+          const areasPredictivos = useMemo(() => {
+            const base = equipos.filter(e =>
+              (predOrigen === 'Todos' || e.origen === predOrigen) && !estaFueraServicio(e));
+            return Array.from(new Set(base.map(e => e.ubicacion).filter(u => u && u.trim() !== '')))
+              .sort((a, b) => a.localeCompare(b, 'es'));
+          }, [equipos, predOrigen]);
+
+          const equiposPredictivos = useMemo(() => {
+            if (!predArea) return [];
+            return equipos
+              .filter(e => e.ubicacion === predArea &&
+                           (predOrigen === 'Todos' || e.origen === predOrigen) &&
+                           !estaFueraServicio(e))
+              .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es'));
+          }, [equipos, predArea, predOrigen]);
+
+          const excluidosPredictivos = useMemo(() => {
+            if (!predArea) return [];
+            return equipos.filter(e => e.ubicacion === predArea &&
+                                       (predOrigen === 'Todos' || e.origen === predOrigen) &&
+                                       estaFueraServicio(e));
+          }, [equipos, predArea, predOrigen]);
+
+          useEffect(() => {
+            if (!predArea) return;
+            const f = detectarFrecuenciaArea(predArea);
+            setPredFrecuencia(f === null ? 'D' : f);
+          }, [predArea]);
+
+          useEffect(() => {
+            if (!predArea || !predMes || !usuarioActivo) { setPredDatos({}); return; }
+            let cancelado = false;
+            (async () => {
+              setPredCargando(true);
+              try {
+                const r = await jsonpConReintentos({ action: 'getPredictivos', mes: predMes, area: predArea });
+                if (cancelado) return;
+                const mapa = {};
+                (r.predictivos || []).forEach(p => { mapa[p.inventario] = { dias: p.dias || {}, obs: p.obs || '' }; });
+                setPredDatos(mapa);
+              } catch (err) {
+                if (cancelado) return;
+                if (esAccesoDenegado(err)) { cerrarSesion(); return; }
+                setSyncError('No se pudieron cargar las revisiones: ' + err.message);
+              } finally {
+                if (!cancelado) setPredCargando(false);
+              }
+            })();
+            return () => { cancelado = true; };
+          }, [predArea, predMes, usuarioActivo]);
+
+          const guardarPredictivo = (equipo, cambios) => jsonpConReintentos({
+            action: 'save',
+            payload: JSON.stringify({
+              action: 'predictivo',
+              mes: predMes,
+              area: predArea,
+              data: {
+                inventario: equipo.numeroInventario,
+                nombre: equipo.nombre || '',
+                marca: equipo.marca || '',
+                modelo: equipo.modelo || '',
+                serie: equipo.numeroSerie || '',
+                ...cambios
+              }
+            })
+          });
+
+          const ciclarMarcaPredictivo = (equipo, dia) => {
+            const inv = equipo.numeroInventario;
+            if (!inv) { setSyncError('El equipo no tiene número de inventario; no se puede registrar su revisión.'); return; }
+            const actual = ((predDatos[inv] || {}).dias || {})[dia] || '';
+            const siguiente = actual === '' ? 'OK' : (actual === 'OK' ? 'F' : '');
+            const previo = predDatos;
+            setPredDatos(prev => {
+              const fila = prev[inv] || { dias: {}, obs: '' };
+              const dias = { ...fila.dias };
+              if (siguiente) dias[dia] = siguiente; else delete dias[dia];
+              return { ...prev, [inv]: { ...fila, dias } };
+            });
+            guardarPredictivo(equipo, { dia, valor: siguiente }).catch(err => {
+              setPredDatos(previo);
+              if (esAccesoDenegado(err)) { cerrarSesion(); return; }
+              setSyncError('No se guardó la marca de revisión: ' + err.message);
+            });
+          };
+
+          const editarObsPredictivo = (inv, texto) => {
+            setPredDatos(prev => ({ ...prev, [inv]: { dias: (prev[inv] || {}).dias || {}, obs: texto } }));
+          };
+
+          const guardarObsPredictivo = (equipo, texto) => {
+            if (!equipo.numeroInventario) return;
+            guardarPredictivo(equipo, { obs: texto }).catch(err => {
+              if (esAccesoDenegado(err)) { cerrarSesion(); return; }
+              setSyncError('No se guardó la observación: ' + err.message);
+            });
+          };
+
+          const renderPredictivos = () => {
+            const [anioP, mesP] = predMes.split('-').map(n => parseInt(n, 10));
+            const diasPred = diasProgramados(predMes, predFrecuencia);
+            const etiquetaMes = (NOMBRES_MESES_LARGOS[(mesP || 1) - 1] || '') + ' ' + (anioP || '');
+            const bloquesDias = [];
+            for (let i = 0; i < diasPred.length; i += 16) bloquesDias.push(diasPred.slice(i, i + 16));
+
+            const marcaDe = (inv, d) => ((predDatos[inv] || {}).dias || {})[d] || '';
+            const totalMarcas = equiposPredictivos.reduce((acc, eq) =>
+              acc + diasPred.filter(d => marcaDe(eq.numeroInventario, d)).length, 0);
+            const totalFallas = equiposPredictivos.reduce((acc, eq) =>
+              acc + diasPred.filter(d => marcaDe(eq.numeroInventario, d) === 'F').length, 0);
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
+                <BannerEstado />
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print-hidden">
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <i className="fas fa-clipboard-check text-blue-600"></i> Mantenimientos Predictivos
+                    <span className="text-sm font-medium text-gray-400 mt-1">Revisión rutinaria · FOR-INB-008</span>
+                  </h2>
+                  <div className="flex gap-2">
+                    <button onClick={() => window.print()} disabled={!predArea}
+                      className="flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition shadow-sm font-medium text-sm disabled:opacity-40">
+                      <i className="fas fa-print"></i> Imprimir formato
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap items-center gap-4 print-hidden">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Mes:</label>
+                    <input type="month" value={predMes} onChange={(e) => e.target.value && setPredMes(e.target.value)}
+                      className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-bold" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Equipo:</label>
+                    <select value={predOrigen} onChange={(e) => setPredOrigen(e.target.value)}
+                      className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                      {['Todos', 'Propio', 'Comodato', 'Renta'].map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+                    <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i>Área:</label>
+                    <select value={predArea} onChange={(e) => setPredArea(e.target.value)}
+                      className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                      <option value="">— Selecciona un área —</option>
+                      {areasPredictivos.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase" title="Según el Calendario de Revisiones Semanales; puedes ajustarla">Frecuencia:</label>
+                    <select value={String(predFrecuencia)} onChange={(e) => setPredFrecuencia(e.target.value === 'D' ? 'D' : parseInt(e.target.value, 10))}
+                      className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none font-medium">
+                      <option value="D">Diaria</option>
+                      {NOMBRES_DIAS.map((n, i) => <option key={i} value={i}>{n} (semanal)</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {!predArea ? (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center text-gray-400 print-hidden">
+                    <i className="fas fa-map-marker-alt text-5xl text-gray-200 mb-4"></i>
+                    <p className="font-medium">Selecciona el mes y el área para ver el listado de equipos a revisar.</p>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50/60">
+                      <p className="text-sm font-bold text-gray-700">
+                        {predArea} · {etiquetaMes}
+                        <span className="ml-3 font-medium text-gray-400">{equiposPredictivos.length} equipos en servicio · {diasPred.length} días programados</span>
+                        {excluidosPredictivos.length > 0 && (
+                          <span className="ml-3 font-medium text-red-400" title={excluidosPredictivos.map(e => `${e.nombre} (${e.numeroInventario}): ${e.motivoFueraServicio || 'Fuera de Servicio'}`).join('\n')}>
+                            <i className="fas fa-ban mr-1"></i>{excluidosPredictivos.length} fuera de servicio (excluidos)
+                          </span>
+                        )}
+                      </p>
+                      <div className="flex items-center gap-4 text-xs font-medium text-gray-500">
+                        {predCargando && <span><i className="fas fa-circle-notch fa-spin mr-1 text-blue-500"></i> Cargando marcas...</span>}
+                        <span><span className="inline-block w-4 h-4 rounded bg-emerald-100 text-emerald-700 text-center font-bold mr-1">✓</span>{totalMarcas - totalFallas} bien</span>
+                        <span><span className="inline-block w-4 h-4 rounded bg-red-100 text-red-600 text-center font-bold mr-1">✗</span>{totalFallas} con falla</span>
+                        <span className="text-gray-400">Clic en la celda: vacío → ✓ → ✗ → vacío</span>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
+                      <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-gray-100 text-gray-500 uppercase tracking-wider text-[10px]">
+                            <th className="p-2 font-bold border-b sticky left-0 bg-gray-100">Equipo</th>
+                            <th className="p-2 font-bold border-b">Marca</th>
+                            <th className="p-2 font-bold border-b">Modelo</th>
+                            <th className="p-2 font-bold border-b">Serie</th>
+                            {diasPred.map(d => (
+                              <th key={d} className="p-1 font-bold border-b text-center min-w-[34px]">
+                                <div>{d}</div>
+                                <div className="text-gray-400 font-medium">{LETRAS_DIAS[new Date(anioP, mesP - 1, d).getDay()]}</div>
+                              </th>
+                            ))}
+                            <th className="p-2 font-bold border-b min-w-[220px]">Observaciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {equiposPredictivos.length === 0 ? (
+                            <tr><td colSpan={5 + diasPred.length} className="p-8 text-center text-gray-400 italic">No hay equipos registrados en esta área.</td></tr>
+                          ) : equiposPredictivos.map(eq => {
+                            const inv = eq.numeroInventario;
+                            return (
+                              <tr key={eq.id} className="border-b border-gray-50 hover:bg-blue-50/30">
+                                <td className="p-2 sticky left-0 bg-white font-bold text-gray-700 max-w-[220px] truncate" title={eq.nombre}>
+                                  {eq.nombre}
+                                  <span className="block text-[10px] font-medium text-gray-400">{inv}</span>
+                                </td>
+                                <td className="p-2 text-gray-500">{eq.marca}</td>
+                                <td className="p-2 text-gray-500">{eq.modelo}</td>
+                                <td className="p-2 text-gray-500">{eq.numeroSerie}</td>
+                                {diasPred.map(d => {
+                                  const m = marcaDe(inv, d);
+                                  return (
+                                    <td key={d} className="p-0 text-center border-l border-gray-50">
+                                      <button onClick={() => ciclarMarcaPredictivo(eq, d)} title={`Día ${d}: ${m === 'OK' ? 'Revisado, bien' : m === 'F' ? 'Con falla' : 'Sin revisar'}`}
+                                        className={`w-full h-9 text-sm font-bold transition ${
+                                          m === 'OK' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                          : m === 'F' ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                                          : 'text-gray-300 hover:bg-blue-50'}`}>
+                                        {m === 'OK' ? '✓' : m === 'F' ? '✗' : '·'}
+                                      </button>
+                                    </td>
+                                  );
+                                })}
+                                <td className="p-1">
+                                  <input type="text" value={(predDatos[inv] || {}).obs || ''}
+                                    onChange={(e) => editarObsPredictivo(inv, e.target.value)}
+                                    onBlur={(e) => guardarObsPredictivo(eq, e.target.value)}
+                                    placeholder="Observaciones..."
+                                    className="w-full py-1.5 px-2 border border-gray-200 rounded text-xs bg-gray-50 outline-none focus:ring-1 focus:ring-blue-400" />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {predArea && (
+                  <div className="hidden print-block">
+                    {bloquesDias.map((bloque, idx) => (
+                      <div key={idx} className={idx > 0 ? 'salto-pagina' : ''}>
+                        <MembreteHSAIP
+                          titulo="Programa de Revisión Semanal"
+                          codigo="HSAIP-FOR-INB-008 Rev. 01"
+                          campos={[
+                            ['EQUIPO', predOrigen],
+                            ['ÁREA', predArea],
+                            ['MES', etiquetaMes]
+                          ]}
+                        />
+                        <table className="tabla-formato">
+                          <thead>
+                            <tr>
+                              <th style={{width: '22%'}}>Equipo</th>
+                              <th style={{width: '12%'}}>Marca</th>
+                              <th style={{width: '12%'}}>Modelo</th>
+                              <th style={{width: '12%'}}>Serie</th>
+                              {bloque.map(d => <th key={d}>{d}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {equiposPredictivos.map(eq => (
+                              <tr key={eq.id}>
+                                <td>{eq.nombre}</td>
+                                <td>{eq.marca}</td>
+                                <td>{eq.modelo}</td>
+                                <td>{eq.numeroSerie}</td>
+                                {bloque.map(d => {
+                                  const m = marcaDe(eq.numeroInventario, d);
+                                  return <td key={d} className="centro">{m === 'OK' ? '✓' : m === 'F' ? '✗' : ''}</td>;
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '10px', margin: '10px 0 3px'}}>Registro de Revisión</p>
+                        <table className="tabla-formato" style={{width: '60%'}}>
+                          <thead>
+                            <tr><th style={{width: '30%'}}>DÍA</th><th style={{width: '35%'}}>ÁREA</th><th style={{width: '35%'}}>BIOMÉDICA</th></tr>
+                          </thead>
+                          <tbody>
+                            {bloque.map(d => (
+                              <tr key={d}>
+                                <td className="centro">{String(d).padStart(2, '0')}/{String(mesP).padStart(2, '0')}/{anioP}</td>
+                                <td>&nbsp;</td>
+                                <td>&nbsp;</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '10px', margin: '10px 0 3px'}}>Observaciones</p>
+                        <div style={{border: '1px solid #000', minHeight: '70px', padding: '4px', fontFamily: 'Arial', fontSize: '9px'}}>
+                          {equiposPredictivos
+                            .filter(eq => ((predDatos[eq.numeroInventario] || {}).obs || '').trim() !== '')
+                            .map(eq => (
+                              <p key={eq.id} style={{margin: '0 0 2px'}}>
+                                <strong>{eq.nombre} ({eq.numeroInventario}):</strong> {(predDatos[eq.numeroInventario] || {}).obs}
+                              </p>
+                            ))}
+                        </div>
+
+                        <div className="leyenda-controlado">DOCUMENTO CONTROLADO. PROHIBIDA SU REPRODUCCIÓN PARCIAL O TOTAL NO AUTORIZADA</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          };
+
+          const renderCalendarios = () => (
+              <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
+                  <BannerEstado />
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print-hidden">
+                      <h2 className="text-2xl font-bold flex items-center gap-2">
+                        <i className="far fa-calendar-alt text-blue-600"></i> Calendario de Mantenimiento Preventivo
+                      </h2>
+                      <div className="flex gap-2">
+                          <button onClick={() => window.print()} className="flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition shadow-sm font-medium text-sm">
+                            <i className="fas fa-print"></i> Imprimir
+                          </button>
+                          <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm">
+                            <i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}
+                          </button>
+                      </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="area-impresion">
+                      <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto print-hidden">
+                        <button onClick={() => setInventarioTab('Propio')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
+                        <button onClick={() => setInventarioTab('Comodato')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
+                        <button onClick={() => setInventarioTab('Renta')} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
+                      </div>
+
+                      <div className="p-4 border-b border-gray-100 bg-white flex flex-wrap items-center gap-4 print-hidden">
+                          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-search mr-1"></i> Control:</label>
+                              <input type="text" value={searchControlCal} onChange={(e) => setSearchControlCal(e.target.value)} placeholder="Buscar No. Control..." className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium" />
+                          </div>
+                          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt mr-1"></i> Área:</label>
+                              <select value={filterUbicacionCal} onChange={(e) => setFilterUbicacionCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                                  {ubicacionesUnicas.map(ub => <option key={ub} value={ub}>{ub}</option>)}
+                              </select>
+                          </div>
+                          <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+                              <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter mr-1"></i> Mes:</label>
+                              <select value={filterMesCal} onChange={(e) => setFilterMesCal(e.target.value)} className="w-full py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                                  <option value="Todos">Todos los meses</option>
+                                  {mesesAbreviados.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                              </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                              <label className="text-xs font-bold text-gray-500 uppercase">Año:</label>
+                              <input type="number" value={calendarYear} onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setCalendarYear(v); }} className="w-24 py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none text-center font-bold" />
+                          </div>
+                      </div>
+
+                      <div className="hidden print-block p-4 text-slate-800">
+                          <MembreteHSAIP
+                              titulo="Programa Anual de Mantenimiento Preventivo"
+                              codigo="HSAIP-FOR-INB-007 Rev. 01"
+                              campos={[
+                                  ['EQUIPO', inventarioTab],
+                                  ['ÁREA', filterUbicacionCal === 'Todos' ? 'Todas' : filterUbicacionCal],
+                                  ['AÑO', String(calendarYear) + (filterMesCal !== 'Todos' ? ' · ' + mesesAbreviados[parseInt(filterMesCal)] : '')]
+                              ]}
+                          />
+                      </div>
+
+                      <div className="overflow-x-auto p-4">
+                          <table className="w-full text-left border-collapse tabla-cal text-xs whitespace-nowrap text-slate-800">
+                              <thead>
+                                  <tr>
+                                      <th className="p-2 w-24">Control</th>
+                                      <th className="p-2">Equipo</th>
+                                      <th className="p-2">Marca</th>
+                                      <th className="p-2">Modelo</th>
+                                      <th className="p-2">Serie</th>
+                                      <th className="p-2">Ubicación</th>
+                                      {mesesAbreviados.map(mes => <th key={mes} className="p-1 w-8 uppercase" style={{writingMode: 'vertical-rl', transform: 'rotate(180deg)', paddingBottom: '10px'}}>{mes}</th>)}
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  {equiposCalendario.length === 0 ? (
+                                      <tr><td colSpan="18" className="p-8 text-center text-gray-500 border border-blue-800">No hay equipos que cumplan con estos filtros.</td></tr>
+                                  ) : (
+                                      equiposCalendario.map((equipo) => {
+                                          const mesesProgramados = obtenerMesesProgramados(equipo.ultimoMantenimiento, equipo.frecuenciaMantenimiento, calendarYear);
+                                          const historialString = equipo.historialEjecuciones || "";
+                                          const ejecutadosArr = limpiarHistorial(historialString);
+                                          
+                                          const isFueraServicio = estaFueraServicio(equipo);
+
+                                          const celdas = [0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
+                                              const strY = calendarYear.toString();
+                                              const strM = (monthIndex + 1).toString().padStart(2, '0');
+                                              const targetStr = `${strY}-${strM}`;
+                                              
+                                              const isEjecutado = ejecutadosArr.includes(targetStr);
+                                              const isProgramado = mesesProgramados.has(monthIndex);
+                                              
+                                              let cellClass = "p-1 border border-blue-800 celda-interactiva ";
+                                              if (isEjecutado) {
+                                                  cellClass += "celda-ejec ";
+                                              } else if (isProgramado) {
+                                                  if (isFueraServicio) {
+                                                      cellClass += "celda-fuera-servicio ";
+                                                  } else {
+                                                      cellClass += "celda-prog "; 
+                                                  }
+                                              } else {
+                                                  cellClass += "bg-white ";
+                                              }
+
+                                              return (
+                                                  <td 
+                                                      key={monthIndex}
+                                                      onClick={() => toggleMantenimientoEjecutado(equipo, monthIndex, calendarYear)}
+                                                      title={`Clic para marcar/desmarcar realizado en ${mesesAbreviados[monthIndex]}`}
+                                                      className={cellClass}
+                                                  ></td>
+                                              );
+                                          });
+
+                                          return (
+                                              <tr key={equipo.id} className="hover:bg-blue-50/30 transition-colors">
+                                                  <td className="p-2 font-bold text-blue-900 border border-blue-800">{equipo.numeroInventario || 'S/N'}</td>
+                                                  <td className="p-2 border border-blue-800">{equipo.nombre}</td>
+                                                  <td className="p-2 text-gray-600 border border-blue-800">{equipo.marca || '-'}</td>
+                                                  <td className="p-2 text-gray-600 border border-blue-800">{equipo.modelo || '-'}</td>
+                                                  <td className="p-2 text-gray-600 font-mono border border-blue-800">{equipo.numeroSerie || '-'}</td>
+                                                  <td className="p-2 text-gray-600 border border-blue-800">{equipo.ubicacion || '-'}</td>
+                                                  {celdas}
+                                              </tr>
+                                          )
+                                      })
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>
+                      
+                      <div className="p-4 bg-blue-50 border-t border-blue-100 flex gap-6 text-xs items-center font-medium print-hidden text-slate-800">
+                          <span className="font-bold text-blue-900 uppercase tracking-widest"><i className="fas fa-info-circle mr-1"></i> Leyenda Visual:</span>
+                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-blue-500 shadow-inner border border-blue-600"></div> <span>Programado</span></div>
+                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-green-500 border border-green-600 flex items-center justify-center text-white text-[10px] font-bold">✓</div> <span>Ejecutado (Clic)</span></div>
+                          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-red-500 shadow-inner border border-red-600"></div> <span>Fuera de Servicio</span></div>
+                      </div>
+                  </div>
+              </div>
+          );
+
+          const renderEquipos = () => {
+            if (selectedEquipo && isEditing) {
+              return (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
+                  <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setIsEditing(false)} className="text-gray-500 hover:text-blue-600 transition"><i className="fas fa-arrow-left text-xl"></i></button>
+                      <h2 className="text-xl font-bold text-gray-800">Editar Equipo: {equipoEditado.numeroInventario}</h2>
+                    </div>
+                  </div>
+                  
+                  <form onSubmit={handleUpdateEquipo} className="p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div><label className="block text-xs font-bold text-gray-700 mb-1">Núm. de Inventario Interno *</label><input required type="text" value={equipoEditado.numeroInventario} onChange={(e) => setEquipoEditado({...equipoEditado, numeroInventario: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div className="lg:col-span-2"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label><input required type="text" value={equipoEditado.nombre} onChange={(e) => setEquipoEditado({...equipoEditado, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label>
+                        <select value={equipoEditado.tipoTecnologia} onChange={(e) => setEquipoEditado({...equipoEditado, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                          <option value="Equipo Médico">Equipo Médico</option><option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option><option value="Infraestructura">Infraestructura</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label>
+                        <select required value={equipoEditado.estatus} onChange={(e) => setEquipoEditado({...equipoEditado, estatus: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                          <option value="En Servicio">En Servicio</option><option value="Fuera de Servicio">Fuera de Servicio</option>
+                        </select>
+                      </div>
+                      {estaFueraServicio(equipoEditado) && (
+                        <div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2">
+                          <label className="block text-xs font-bold text-red-600 mb-1">Motivo de "Fuera de Servicio"</label>
+                          <select value={equipoEditado.motivoFueraServicio} onChange={(e) => setEquipoEditado({...equipoEditado, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">
+                            {motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      
+                      <div className="lg:col-span-3 border-t border-gray-200 my-2 pt-4">
+                          <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Configuración de Mantenimiento Preventivo</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Frecuencia</label>
+                                  <select value={equipoEditado.frecuenciaMantenimiento} onChange={(e) => {
+                                      const updated = {...equipoEditado, frecuenciaMantenimiento: e.target.value};
+                                      updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, e.target.value);
+                                      setEquipoEditado(updated);
+                                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                    {frecuenciasOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                                  </select>
+                              </div>
+                              <div>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Último (Base)</label>
+                                  <input type="month" value={equipoEditado.ultimoMantenimiento} onChange={(e) => {
+                                      const updated = {...equipoEditado, ultimoMantenimiento: e.target.value};
+                                      updated.proximoMantenimiento = calcularProximoMantenimiento(e.target.value, updated.frecuenciaMantenimiento);
+                                      setEquipoEditado(updated);
+                                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                              </div>
+                              <div>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Próximo (Calculado)</label>
+                                  <input type="month" value={equipoEditado.proximoMantenimiento} readOnly className="w-full px-3 py-2 border border-blue-200 bg-blue-50 text-blue-800 font-bold rounded-lg text-sm cursor-not-allowed" />
+                              </div>
+                          </div>
+                      </div>
+
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Marca</label><input type="text" value={equipoEditado.marca} onChange={(e) => setEquipoEditado({...equipoEditado, marca: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Modelo o Versión</label><input type="text" value={equipoEditado.modelo} onChange={(e) => setEquipoEditado({...equipoEditado, modelo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={equipoEditado.numeroSerie} onChange={(e) => setEquipoEditado({...equipoEditado, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={equipoEditado.fabricante} onChange={(e) => setEquipoEditado({...equipoEditado, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={equipoEditado.ubicacion} onChange={(e) => setEquipoEditado({...equipoEditado, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={esAfirmativo(equipoEditado.polizaMantenimiento) ? 'SI' : 'NO'} onChange={(e) => setEquipoEditado({...equipoEditado, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="SI">Sí</option><option value="NO">No</option></select></div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Nivel de Riesgo *</label>
+                        <select required value={equipoEditado.nivelRiesgo || ''} onChange={(e) => setEquipoEditado({...equipoEditado, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                          <option value="" disabled>Selecciona…</option>
+                          {equipoEditado.nivelRiesgo && !['I', 'II', 'III'].includes(equipoEditado.nivelRiesgo) && (
+                            <option value={equipoEditado.nivelRiesgo}>{equipoEditado.nivelRiesgo} (valor previo)</option>
+                          )}
+                          <option value="I">I</option><option value="II">II</option><option value="III">III</option>
+                        </select>
+                      </div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={equipoEditado.proveedorMantenimiento} onChange={(e) => setEquipoEditado({...equipoEditado, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={equipoEditado.fechaAlta ? equipoEditado.fechaAlta.split('T')[0] : ''} onChange={(e) => setEquipoEditado({...equipoEditado, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                      <div className="lg:col-span-3"><label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label><textarea value={equipoEditado.descripcion} onChange={(e) => setEquipoEditado({...equipoEditado, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea></div>
+                    </div>
+                    <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
+                      <button type="button" onClick={() => setIsEditing(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
+                      <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
+                        {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>} Guardar Cambios
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              );
+            }
+
+            if (selectedEquipo) {
+              const freqText = frecuenciasOptions.find(f => f.id === selectedEquipo.frecuenciaMantenimiento)?.label || 'No asignada';
+              
+              const handleJotformRedirect = () => {
+                  const formUrl = "https://form.jotform.com/253464903173862";
+                  const params = new URLSearchParams({
+                      equipoName: selectedEquipo.nombre || '',
+                      equipoMarca: selectedEquipo.marca || '',
+                      equipoModelo: selectedEquipo.modelo || '',
+                      equipoSerie: selectedEquipo.numeroSerie || '',
+                      equipoInventario: selectedEquipo.numeroInventario || '',
+                      equipoUbicacion: selectedEquipo.ubicacion || ''
+                  });
+                  window.open(`${formUrl}?${params.toString()}`, '_blank');
+              };
+
+              return (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
+                  <div className="p-4 border-b border-gray-100 flex items-center gap-4 bg-gray-50">
+                    <button onClick={() => setSelectedEquipo(null)} className="text-gray-500 hover:text-blue-600 transition flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 shadow-sm"><i className="fas fa-arrow-left"></i> Volver al Inventario</button>
+                    <div className="ml-auto flex gap-2">
+                      <button onClick={handleJotformRedirect} className="flex items-center gap-2 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-lg hover:bg-amber-100 transition shadow-sm font-medium text-sm">
+                        <i className="fas fa-wrench"></i> Generar Orden (OS)
+                      </button>
+                      <button onClick={() => { setEquipoEditado({...selectedEquipo}); setIsEditing(true); }} className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition shadow-sm font-medium text-sm">
+                        <i className="fas fa-edit"></i> Editar Información
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-8">
+                    <div className="flex flex-col lg:flex-row justify-between items-start gap-4 mb-8 border-b border-gray-100 pb-6">
+                      <div className="flex-1">
+                        <h2 className="text-3xl font-bold mb-2">{selectedEquipo.nombre || 'Equipo sin nombre'}</h2>
+                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200 shadow-sm"><i className="fas fa-wrench mr-2"></i> {freqText}</span>
+                            {selectedEquipo.ultimoMantenimiento && <span className="text-gray-600 font-medium flex items-center bg-gray-50 px-2 py-1 rounded border border-gray-200"><i className="far fa-calendar-check mr-2 text-gray-400"></i> Último Base: {selectedEquipo.ultimoMantenimiento}</span>}
+                            {selectedEquipo.proximoMantenimiento && <span className="text-emerald-700 font-bold flex items-center bg-emerald-50 px-2 py-1 rounded border border-emerald-200"><i className="fas fa-arrow-right mx-2 text-emerald-400"></i> Próximo Est.: {selectedEquipo.proximoMantenimiento}</span>}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-3 min-w-[250px]">
+                        <span className={`px-4 py-2 rounded-lg border font-bold text-lg text-center shadow-sm w-full ${getEstatusColor(selectedEquipo.estatus)}`}>{selectedEquipo.numeroInventario || 'Sin No. Inv'}</span>
+                        <div className="w-full bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest"><i className="fas fa-exchange-alt mr-1"></i> Estatus:</label>
+                            <select value={selectedEquipo.estatus} onChange={(e) => {
+                                  const updated = { ...selectedEquipo, estatus: e.target.value };
+                                  if (e.target.value === 'En Servicio') updated.motivoFueraServicio = '';
+                                  else updated.motivoFueraServicio = motivosOptions[0];
+                                  setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated, equipos);
+                              }} className={`text-sm font-bold bg-transparent outline-none cursor-pointer ${estaEnServicio(selectedEquipo) ? 'text-emerald-700' : 'text-red-700'}`}>
+                              <option value="En Servicio" className="text-emerald-700 font-bold">En Servicio</option><option value="Fuera de Servicio" className="text-red-700 font-bold">Fuera de Servicio</option>
+                            </select>
+                          </div>
+                          {estaFueraServicio(selectedEquipo) && (
+                            <div className="flex flex-col gap-1 mt-1 border-t border-gray-100 pt-2 animate-in fade-in">
+                              <label className="text-[10px] font-bold text-red-500 uppercase">Motivo:</label>
+                              <select value={selectedEquipo.motivoFueraServicio || ''} onChange={(e) => {
+                                    const updated = { ...selectedEquipo, motivoFueraServicio: e.target.value };
+                                    setSelectedEquipo(updated); setEquipos(equipos.map(eq => eq.id === updated.id ? updated : eq)); directSaveToSheets(updated, equipos);
+                                }} className="text-xs font-medium border border-red-200 rounded p-1.5 text-red-700 bg-red-50 w-full outline-none">
+                                <option value="" disabled>Seleccione un motivo...</option>{motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8">
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Categoría</p><p className="font-medium">{selectedEquipo.tipoTecnologia || '-'}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Marca</p><p className="font-medium">{selectedEquipo.marca || '-'}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Modelo / Versión</p><p className="font-medium">{selectedEquipo.modelo || '-'}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Número de Serie</p><p className="font-medium font-mono">{selectedEquipo.numeroSerie || '-'}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Ubicación Física</p><p className="font-medium"><i className="fas fa-map-marker-alt text-red-400 mr-2"></i>{selectedEquipo.ubicacion || '-'}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fabricante</p><p className="font-medium">{selectedEquipo.fabricante || '-'}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Póliza Preventivo</p><p className="font-medium">{esAfirmativo(selectedEquipo.polizaMantenimiento) ? <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Vigente</span> : <span className="text-gray-500">Sin Póliza</span>}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Proveedor Mantenimiento</p><p className="font-medium">{selectedEquipo.proveedorMantenimiento || '-'}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Nivel de Riesgo</p><p className="font-medium">{selectedEquipo.nivelRiesgo || '-'}</p></div>
+                      <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta</p><p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p></div>
+                      <div className="lg:col-span-3 mt-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p><p className="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">{selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}</p></div>
+
+                      <div className="lg:col-span-3 mt-6 pt-6 border-t-2 border-dashed border-gray-200">
+                        <ExpedienteEquipo equipo={selectedEquipo} />
+                      </div>
+
+                      <div className="lg:col-span-3 mt-6 pt-6 border-t-2 border-dashed border-gray-200">
+                        <EtiquetaEquipo equipo={selectedEquipo} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-300 text-slate-800">
+                <BannerEstado />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <h2 className="text-2xl font-bold flex items-center gap-2"><i className="fas fa-stethoscope text-blue-600"></i> Hojas de Inventario</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm"><i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}</button>
+                    <button onClick={() => { setNuevoEquipo({...estadoInicialEquipo, origen: inventarioTab}); setShowAddEquipo(true); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm"><i className="fas fa-plus"></i> Agregar Equipo</button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto">
+                    <button onClick={() => { setInventarioTab('Propio'); setFilterUbicacion('Todas'); setPaginaActual(0); }} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Propio' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 1: Equipo Propio</button>
+                    <button onClick={() => { setInventarioTab('Comodato'); setFilterUbicacion('Todas'); setPaginaActual(0); }} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Comodato' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 2: Comodato</button>
+                    <button onClick={() => { setInventarioTab('Renta'); setFilterUbicacion('Todas'); setPaginaActual(0); }} className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${inventarioTab === 'Renta' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>Hoja 3: Renta</button>
+                  </div>
+
+                  <div className="p-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row flex-wrap gap-3">
+                    <div className="relative flex-1 min-w-[200px]">
+                      <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                      <input type="text" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setPaginaActual(0); }} placeholder={`Buscar en ${inventarioTab.toLowerCase()} (Nombre, Marca, Serie, Inv)...`} className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-map-marker-alt"></i> Área:</label>
+                        <select value={filterUbicacion} onChange={(e) => { setFilterUbicacion(e.target.value); setPaginaActual(0); }} className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium max-w-[180px]">
+                            {ubicacionesUnicas.map(ub => <option key={ub} value={ub}>{ub}</option>)}
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase"><i className="fas fa-filter"></i> Filtro Estatus:</label>
+                        <select value={filterEstatus} onChange={(e) => { setFilterEstatus(e.target.value); setPaginaActual(0); }} className="py-2 px-3 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                            <option value="Todos">Mostrar Todos</option><option value="En Servicio">Sólo En Servicio</option><option value="Fuera de Servicio">Sólo Fuera de Servicio</option>
+                        </select>
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse whitespace-nowrap">
+                      <thead>
+                        <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
+                          <th className="p-4 font-bold border-b">NO. INV.</th><th className="p-4 font-bold border-b">EQUIPO / TECNOLOGÍA</th><th className="p-4 font-bold border-b">ÁREA</th><th className="p-4 font-bold border-b">MARCA</th><th className="p-4 font-bold border-b">MODELO</th><th className="p-4 font-bold border-b">SERIE</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {equiposFiltrados.length === 0 && (
+                          <tr><td colSpan="6" className="p-8 text-center text-gray-500">No se encontraron equipos con esos criterios.</td></tr>
+                        )}
+                        {equiposPagina.map((equipo) => (
+                          <tr key={equipo.id} onClick={() => setSelectedEquipo(equipo)} className="border-b border-gray-50 hover:bg-blue-50/50 transition cursor-pointer text-sm group">
+                            <td className="p-4"><span className={`px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider shadow-sm transition-colors ${getEstatusColor(equipo.estatus)}`}>{equipo.numeroInventario || 'S/N'}</span></td>
+                            <td className="p-4 font-medium group-hover:text-blue-700 transition-colors">{equipo.nombre}</td>
+                            <td className="p-4 text-gray-600">{equipo.ubicacion || '-'}</td>
+                            <td className="p-4 text-gray-600">{equipo.marca || '-'}</td>
+                            <td className="p-4 text-gray-600">{equipo.modelo || '-'}</td>
+                            <td className="p-4 text-gray-500 font-mono text-xs">{equipo.numeroSerie || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 bg-gray-50/60">
+                    <p className="text-xs text-gray-500 font-medium">
+                      {equiposFiltrados.length === 0
+                        ? 'Sin resultados'
+                        : `Mostrando ${paginaSegura * INVENTARIO_PAGE_SIZE + 1}–${Math.min((paginaSegura + 1) * INVENTARIO_PAGE_SIZE, equiposFiltrados.length)} de ${equiposFiltrados.length} equipos`}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <button type="button" onClick={() => setPaginaActual(p => Math.max(0, p - 1))} disabled={paginaSegura === 0} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 hover:bg-white hover:border-blue-300 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition">
+                        <i className="fas fa-chevron-left"></i> Atrás
+                      </button>
+                      <span className="text-xs font-bold text-gray-500">Página {paginaSegura + 1} de {totalPaginasInventario}</span>
+                      <button type="button" onClick={() => setPaginaActual(p => Math.min(totalPaginasInventario - 1, p + 1))} disabled={paginaSegura >= totalPaginasInventario - 1} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 hover:bg-white hover:border-blue-300 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition">
+                        Siguiente <i className="fas fa-chevron-right"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          if (!usuarioActivo) {
+            return (
+              <PantallaAcceso onAcceso={(pin, usuario) => {
+                SESION.guardar(pin, usuario);
+                setUsuarioActivo(usuario);
+              }} />
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
+              <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10 md:min-h-screen print-hidden">
+                <div className="p-6 border-b border-slate-800 flex items-center gap-3">
+                  <div className="bg-blue-500 p-2 rounded-lg w-10 h-10 flex items-center justify-center"><i className="fas fa-thermometer-half text-white text-xl"></i></div>
+                  <div>
+                    <h1 className="text-xl font-bold tracking-tight">MediCMMS</h1>
+                    <p className="text-xs text-slate-400">Google Sheets Sync</p>
+                  </div>
+                </div>
+                
+                <nav className="flex-1 p-4 space-y-2">
+                  <button onClick={() => {setActiveTab('dashboard'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-columns w-5 text-center"></i> Dashboard</button>
+                  <button onClick={() => {setActiveTab('equipos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'equipos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-stethoscope w-5 text-center"></i> Inventario</button>
+                  <button onClick={() => {setActiveTab('calendarios'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'calendarios' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="far fa-calendar-alt w-5 text-center"></i> Calendarios</button>
+                  <button onClick={() => {setActiveTab('predictivos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'predictivos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-clipboard-check w-5 text-center"></i> Predictivos</button>
+                </nav>
+
+                <div className="p-4 border-t border-slate-800 flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Sesión</p>
+                    <p className="text-sm font-medium text-slate-200 truncate" title={usuarioActivo}>
+                      <i className="fas fa-user-shield mr-2 text-blue-400"></i>{usuarioActivo}
+                    </p>
+                  </div>
+                  <button onClick={cerrarSesion} title="Cerrar sesión"
+                    className="text-slate-400 hover:text-red-400 transition px-2 py-1.5 rounded-lg hover:bg-slate-800 text-sm font-medium whitespace-nowrap">
+                    <i className="fas fa-sign-out-alt mr-1"></i> Salir
+                  </button>
+                </div>
+              </aside>
+
+              <main className="flex-1 p-0 md:p-6 overflow-y-auto relative">
+                <div className={`max-w-7xl mx-auto h-full ${activeTab === 'dashboard' ? 'p-0 md:p-0' : ''}`}>
+                  {activeTab === 'dashboard' && <IndicadoresDashboard equipos={equipos} indicadores={indicadores} sincronizando={isSyncing} errorSync={syncError} />}
+                  {activeTab === 'equipos' && renderEquipos()}
+                  {activeTab === 'calendarios' && renderCalendarios()}
+                  {activeTab === 'predictivos' && renderPredictivos()}
+                </div>
+              </main>
+
+              {}
+              {showAddEquipo && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 text-slate-800">
+                  <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-blue-50">
+                      <div><h3 className="text-lg font-bold">Registrar Nuevo Equipo</h3><p className="text-xs text-blue-600 font-medium mt-1 flex items-center gap-1"><i className="fas fa-database"></i> Se guardará en la hoja: <strong>{nuevoEquipo.origen}</strong></p></div>
+                      <button onClick={() => setShowAddEquipo(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+                    </div>
+                    
+                    <form onSubmit={handleAddEquipo} className="p-6 overflow-y-auto flex-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="lg:col-span-3 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2 flex flex-col md:flex-row md:items-end gap-3">
+                          <div className="flex-1">
+                            <label className="block text-xs font-bold text-blue-800 mb-1">¿A qué hoja de cálculo pertenece este registro?</label>
+                            <select value={nuevoEquipo.origen} onChange={(e) => setNuevoEquipo({...nuevoEquipo, origen: e.target.value})} className="w-full md:w-2/3 px-3 py-2 border border-blue-200 rounded-lg text-sm font-medium text-blue-900 bg-white"><option value="Propio">Hoja: Equipo Propio</option><option value="Comodato">Hoja: Equipo en Comodato</option><option value="Renta">Hoja: Equipo en Renta</option></select>
+                          </div>
+                          <div className="md:w-52">
+                            <label className="block text-xs font-bold text-blue-800 mb-1"><i className="fas fa-hashtag mr-1"></i>Núm. de Inventario</label>
+                            <div className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm bg-white flex items-center justify-between">
+                              <span className="font-bold text-blue-900">{siguienteFolioPreview}</span>
+                              <span className="text-[10px] font-medium text-blue-400">automático</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="lg:col-span-3"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Equipo o Tecnología *</label><input required type="text" value={nuevoEquipo.nombre} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nombre: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-bold text-gray-700 mb-1">¿Equipo o Tecnología?</label><select value={nuevoEquipo.tipoTecnologia} onChange={(e) => setNuevoEquipo({...nuevoEquipo, tipoTecnologia: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Equipo Médico">Equipo Médico</option><option value="Tecnología de Apoyo">Tecnología de Apoyo / Software</option><option value="Infraestructura">Infraestructura</option></select></div>
+                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Estatus *</label><select required value={nuevoEquipo.estatus} onChange={(e) => setNuevoEquipo({...nuevoEquipo, estatus: e.target.value, motivoFueraServicio: e.target.value === 'En Servicio' ? '' : motivosOptions[0]})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="En Servicio">En Servicio</option><option value="Fuera de Servicio">Fuera de Servicio</option></select></div>
+                        {estaFueraServicio(nuevoEquipo) && (<div className="lg:col-span-3 bg-red-50 p-3 rounded-lg border border-red-200 mb-2"><label className="block text-xs font-bold text-red-600 mb-1">Motivo de "Fuera de Servicio"</label><select value={nuevoEquipo.motivoFueraServicio} onChange={(e) => setNuevoEquipo({...nuevoEquipo, motivoFueraServicio: e.target.value})} className="w-full md:w-1/2 px-3 py-2 border border-red-300 rounded-lg text-sm bg-white text-red-800 font-medium">{motivosOptions.map(m => <option key={m} value={m}>{m}</option>)}</select></div>)}
+                        <div className="lg:col-span-3 border-t border-gray-200 my-2 pt-4">
+                            <h4 className="text-sm font-bold text-gray-800 mb-3"><i className="fas fa-wrench mr-2 text-blue-500"></i>Mantenimiento Preventivo</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div><label className="block text-xs font-bold text-gray-700 mb-1">Frecuencia</label><select value={nuevoEquipo.frecuenciaMantenimiento} onChange={(e) => { const updated = {...nuevoEquipo, frecuenciaMantenimiento: e.target.value}; updated.proximoMantenimiento = calcularProximoMantenimiento(updated.ultimoMantenimiento, e.target.value); setNuevoEquipo(updated); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">{frecuenciasOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}</select></div>
+                                <div><label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Último Servicio</label><input type="month" value={nuevoEquipo.ultimoMantenimiento} onChange={(e) => { const updated = {...nuevoEquipo, ultimoMantenimiento: e.target.value}; updated.proximoMantenimiento = calcularProximoMantenimiento(e.target.value, updated.frecuenciaMantenimiento); setNuevoEquipo(updated); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                                <div><label className="block text-xs font-bold text-gray-700 mb-1">Mes/Año Próximo (Calculado)</label><input type="month" value={nuevoEquipo.proximoMantenimiento} readOnly className="w-full px-3 py-2 border border-blue-200 bg-blue-50 text-blue-800 font-bold rounded-lg text-sm cursor-not-allowed" /></div>
+                            </div>
+                        </div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Marca</label><input type="text" value={nuevoEquipo.marca} onChange={(e) => setNuevoEquipo({...nuevoEquipo, marca: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Modelo o Versión</label><input type="text" value={nuevoEquipo.modelo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, modelo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Número de Serie</label><input type="text" value={nuevoEquipo.numeroSerie} onChange={(e) => setNuevoEquipo({...nuevoEquipo, numeroSerie: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Fabricante</label><input type="text" value={nuevoEquipo.fabricante} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fabricante: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Ubicación Física *</label><input required type="text" value={nuevoEquipo.ubicacion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, ubicacion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">¿Póliza Preventivo?</label><select value={esAfirmativo(nuevoEquipo.polizaMantenimiento) ? 'SI' : 'NO'} onChange={(e) => setNuevoEquipo({...nuevoEquipo, polizaMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="SI">Sí</option><option value="NO">No</option></select></div>
+                        <div><label className="block text-xs font-bold text-gray-700 mb-1">Nivel de Riesgo *</label><select required value={nuevoEquipo.nivelRiesgo} onChange={(e) => setNuevoEquipo({...nuevoEquipo, nivelRiesgo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="I">I</option><option value="II">II</option><option value="III">III</option></select></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Proveedor Mantenimiento</label><input type="text" value={nuevoEquipo.proveedorMantenimiento} onChange={(e) => setNuevoEquipo({...nuevoEquipo, proveedorMantenimiento: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div><label className="block text-xs font-medium text-gray-700 mb-1">Fecha de Alta</label><input type="date" value={nuevoEquipo.fechaAlta} onChange={(e) => setNuevoEquipo({...nuevoEquipo, fechaAlta: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                        <div className="lg:col-span-3"><label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label><textarea value={nuevoEquipo.descripcion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea></div>
+                      </div>
+                      <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
+                        <button type="button" onClick={() => setShowAddEquipo(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
+                        <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
+                          {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>} {isSyncing ? 'Guardando...' : 'Guardar y Sincronizar'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<CMMSHospitalario />);
+    </script>
+</body>
+</html>
