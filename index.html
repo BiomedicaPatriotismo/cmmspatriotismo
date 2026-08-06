@@ -46,7 +46,6 @@
 
         /* ================================================================
            MEMBRETE INSTITUCIONAL HSAIP (impresión de formatos controlados)
-           Réplica del encabezado: logo | datos del hospital | título+código
            ================================================================ */
         .membrete-hsaip {
             display: grid;
@@ -58,7 +57,6 @@
         }
         .membrete-logo { display: flex; align-items: flex-start; gap: 8px; }
         .membrete-logo .barra { width: 10px; height: 92px; background: #8FAADC; border-radius: 2px; }
-        
         .membrete-logo .caja {
             border: 3px solid #2E74B5; border-radius: 14px 14px 14px 0;
             width: 74px; height: 58px; display: flex; align-items: center; justify-content: center;
@@ -69,7 +67,6 @@
         .membrete-logo .marca .h2 { font-size: 16px; font-weight: 700; }
         .membrete-logo .marca .h3 { font-size: 9px; letter-spacing: 3px; font-weight: 600; }
         .membrete-logo img { max-height: 100px; max-width: 175px; object-fit: contain; }
-        
         .membrete-datos { font-family: Arial, sans-serif; font-size: 12px; color: #2E74B5; line-height: 1.45; }
         .membrete-datos .razon { font-weight: 700; color: #1F4687; }
         .membrete-titulo { text-align: right; font-family: Arial, sans-serif; }
@@ -98,24 +95,32 @@
         
         /* Estilos de Impresión */
         @media print {
-            html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; height: auto !important; overflow: visible !important; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
+            @page { size: portrait; margin: 10mm; }
             
-            /* Permite que los contenedores principales crezcan infinitamente para imprimir todas las páginas sin barras de scroll */
-            #root, main, .min-h-screen, .h-full, .overflow-y-auto, .overflow-x-auto, .overflow-hidden, .max-h-[65vh], .max-h-80 {
+            /* REINICIO TOTAL PARA IMPRESIÓN (Destruye flexbox y scrollbars que causan recortes) */
+            html, body, #root, .min-h-screen, main, .max-w-7xl, .space-y-6, .overflow-y-auto, .overflow-x-auto, .overflow-hidden, .max-h-[65vh] {
+                display: block !important;
+                position: static !important;
                 height: auto !important;
                 min-height: 0 !important;
                 max-height: none !important;
+                width: auto !important;
+                max-width: none !important;
                 overflow: visible !important;
+                box-shadow: none !important;
+                flex: none !important;
             }
             
-            /* Evita que el contenedor flex principal recorte el contenido en Chrome/Edge */
-            .min-h-screen { display: block !important; }
-
-            @page { size: landscape; margin: 5mm; }
-            
-            .print-hidden { display: none !important; }
+            .print-hidden, aside, nav, header { display: none !important; }
             .print-block { display: block !important; }
             main { padding: 0 !important; margin: 0 !important; }
+
+            /* Evitar que las tablas se corten y asegurar el ancho */
+            table { page-break-inside: auto; width: 100% !important; border-collapse: collapse !important; }
+            tr    { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
             
             /* Ajustes del CMMS */
             .bg-slate-50 { background-color: white !important; }
@@ -204,7 +209,7 @@
             guardar(datos) {
                 try {
                     window.localStorage.setItem('cmms_cache', JSON.stringify({ t: Date.now(), datos }));
-                } catch (e) { }
+                } catch (e) {}
             },
             leer() {
                 try {
@@ -287,6 +292,7 @@
                 const img = new Image();
                 img.onload = () => {
                     const margen = Math.round(1.2 * DPMM);
+
                     const qrLado = Math.round(ETQ_QR_MM * DPMM);
                     ctx.imageSmoothingEnabled = false;   
                     ctx.drawImage(img, margen, Math.round((ETQ_H - qrLado) / 2), qrLado, qrLado);
@@ -959,9 +965,9 @@
         };
 
         // ============================================================================
-        // MEMBRETE INSTITUCIONAL PARA IMPRESIÓN DE FORMATOS
+        // [REV-09] MEMBRETE INSTITUCIONAL PARA IMPRESIÓN DE FORMATOS
         // ============================================================================
-        const LOGO_HSAIP_URL = 'data:image/png;base64,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';
+        const LOGO_HSAIP_URL = ''; // Puedes pegar la cadena base64 de tu logo oficial aquí
 
         const MembreteHSAIP = ({ titulo, codigo, campos }) => (
             <div className="membrete-hsaip">
@@ -1165,7 +1171,7 @@
                     const r = await jsonpConReintentos({
                         action: 'getDocumentosEquipo',
                         inventario: equipo.numeroInventario,
-                        refrescar: forzar ? '1' : '0'   
+                        refrescar: forzar ? '1' : '0'
                     });
                     setDocs(r);
                     if (r && r.encontrada) CACHE_EXPEDIENTES.set(equipo.numeroInventario, r);
@@ -1338,7 +1344,7 @@
                                             {ordenesVisibles.length === 0 ? (
                                                 <tr><td colSpan="4" className="p-6 text-center text-gray-400 text-sm italic">
                                                     {conteosPorTipo.TODAS === 0
-                                                        ? 'La carpeta no contiene órdenes de servicio reconocibles (prefijo OSMP / OSMC / OSI / OSB / OSA, o formato "OS-Preventivo-...", "OS-Correctivo-...", "OS-Instalacion-...", "OS-Baja-...", "OS-Asistencia-...").'
+                                                        ? 'La carpeta no contiene órdenes de servicio reconocibles (prefijo OSMP / OSMC / OSI / OSB / OSA).'
                                                         : 'No hay órdenes de este tipo.'}
                                                 </td></tr>
                                             ) : (
@@ -1423,10 +1429,9 @@
           const [syncError, setSyncError] = useState(null);
           const [ultimaSync, setUltimaSync] = useState(null);
           const [bitacora, setBitacora] = useState([]);
-          
           const [indicadores, setIndicadores] = useState([]);
           const [usuarioActivo, setUsuarioActivo] = useState(SESION.usuario);
-          
+
           const [predMes, setPredMes] = useState(() => {
             const h = new Date();
             return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
@@ -1446,7 +1451,6 @@
           }, [tecnicoActivo]);
           
           const [showAddEquipo, setShowAddEquipo] = useState(false);
-          
           const [searchTerm, setSearchTerm] = useState('');
           const [filterEstatus, setFilterEstatus] = useState('Todos');
           const [filterUbicacion, setFilterUbicacion] = useState('Todas');
@@ -1529,14 +1533,11 @@
                   if (e.origen !== inventarioTab) return false;
                   if (!e.frecuenciaMantenimiento || e.frecuenciaMantenimiento === '') return false;
                   if (esBajaDefinitiva(e)) return false;
-
                   if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
-                  
                   if (searchControlCal) {
                       const s = searchControlCal.toLowerCase();
                       if (!String(e.numeroInventario || '').toLowerCase().includes(s)) return false;
                   }
-
                   if (filterMesCal !== 'Todos') {
                       const monthIdx = parseInt(filterMesCal, 10);
                       const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
@@ -1556,7 +1557,6 @@
             }
             try {
               const data = await jsonpConReintentos({ action: 'getAll' });
-
               const procesarHoja = (arr, origen) => (arr || [])
                 .filter(e => e.numeroInventario || e.nombre)
                 .map(e => ({
@@ -1584,7 +1584,7 @@
               });
 
               if (consolidado.length === 0) {
-                setSyncError('El backend respondió correctamente, pero no devolvió equipos. Verifica los nombres de las hojas (Propio, Comodato, Renta) y que tengan datos.');
+                setSyncError('El backend respondió correctamente, pero no devolvió equipos.');
               }
             } catch (error) {
               console.error(error);
@@ -1613,7 +1613,6 @@
               setUltimaSync(new Date().toLocaleString('es-MX'));
               return true;
             } catch (error) {
-              console.error(error);
               if (estadoPrevio) setEquipos(estadoPrevio);
               if (esAccesoDenegado(error)) { cerrarSesion(); return false; }
               setSyncError('No se guardó en Google Sheets: ' + error.message);
@@ -1634,7 +1633,6 @@
 
           const handleAddEquipo = async (e) => {
             e.preventDefault();
-
             if (!nuevoEquipo.nombre || !nuevoEquipo.ubicacion) {
               setSyncError('El nombre del equipo y el área/ubicación son obligatorios.');
               return;
@@ -1714,9 +1712,6 @@
             return 'bg-gray-100 text-gray-800 border-gray-300'; 
           };
 
-          // ============================================================================
-          // ETIQUETA DE IDENTIFICACIÓN DEL EQUIPO
-          // ============================================================================
           const EtiquetaEquipo = ({ equipo }) => {
             const [imgUrl, setImgUrl] = useState(null);
             const [errorEtiqueta, setErrorEtiqueta] = useState(null);
@@ -1842,9 +1837,6 @@
             return null;
           };
 
-          // ==================================================================
-          // [REV-09] MANTENIMIENTOS PREDICTIVOS — lógica
-          // ==================================================================
           const areasPredictivos = useMemo(() => {
             const base = equipos.filter(e =>
               (predOrigen === 'Todos' || e.origen === predOrigen) && !estaFueraServicio(e));
@@ -1919,12 +1911,14 @@
             const actual = ((predDatos[inv] || {}).dias || {})[dia] || '';
             const siguiente = actual === '' ? 'OK' : (actual === 'OK' ? 'F' : '');
             const previo = predDatos;
+            
             setPredDatos(prev => {
               const fila = prev[inv] || { dias: {}, obs: '' };
               const dias = { ...fila.dias };
               if (siguiente) dias[dia] = siguiente; else delete dias[dia];
               return { ...prev, [inv]: { ...fila, dias } };
             });
+            
             guardarPredictivo(equipo, { dia, valor: siguiente }).catch(err => {
               setPredDatos(previo);
               if (esAccesoDenegado(err)) { cerrarSesion(); return; }
@@ -1949,7 +1943,8 @@
             const diasPred = diasProgramados(predMes, predFrecuencia);
             const etiquetaMes = (NOMBRES_MESES_LARGOS[(mesP || 1) - 1] || '') + ' ' + (anioP || '');
             const bloquesDias = [];
-            for (let i = 0; i < diasPred.length; i += 16) bloquesDias.push(diasPred.slice(i, i + 16));
+            // Agrupación de 10 días para formato vertical (Portrait)
+            for (let i = 0; i < diasPred.length; i += 10) bloquesDias.push(diasPred.slice(i, i + 10));
 
             const marcaDe = (inv, d) => ((predDatos[inv] || {}).dias || {})[d] || '';
             const totalMarcas = equiposPredictivos.reduce((acc, eq) =>
@@ -2090,6 +2085,7 @@
                   </div>
                 )}
 
+                {/* Formato impreso FOR-INB-008 (solo al imprimir) */}
                 {predArea && (
                   <div className="hidden print-block">
                     {bloquesDias.map((bloque, idx) => (
@@ -2106,7 +2102,7 @@
                         <table className="tabla-formato">
                           <thead>
                             <tr>
-                              <th style={{width: '22%'}}>Equipo</th>
+                              <th style={{width: '20%'}}>Equipo</th>
                               <th style={{width: '12%'}}>Marca</th>
                               <th style={{width: '12%'}}>Modelo</th>
                               <th style={{width: '12%'}}>Serie</th>
@@ -2129,34 +2125,40 @@
                           </tbody>
                         </table>
 
-                        <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '10px', margin: '10px 0 3px'}}>Registro de Revisión</p>
-                        <table className="tabla-formato" style={{width: '60%'}}>
-                          <thead>
-                            <tr><th style={{width: '30%'}}>DÍA</th><th style={{width: '35%'}}>ÁREA</th><th style={{width: '35%'}}>BIOMÉDICA</th></tr>
-                          </thead>
-                          <tbody>
-                            {bloque.map(d => (
-                              <tr key={d}>
-                                <td className="centro">{String(d).padStart(2, '0')}/{String(mesP).padStart(2, '0')}/{anioP}</td>
-                                <td>&nbsp;</td>
-                                <td>&nbsp;</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-
-                        <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '10px', margin: '10px 0 3px'}}>Observaciones</p>
-                        <div style={{border: '1px solid #000', minHeight: '70px', padding: '4px', fontFamily: 'Arial', fontSize: '9px'}}>
-                          {equiposPredictivos
-                            .filter(eq => ((predDatos[eq.numeroInventario] || {}).obs || '').trim() !== '')
-                            .map(eq => (
-                              <p key={eq.id} style={{margin: '0 0 2px'}}>
-                                <strong>{eq.nombre} ({eq.numeroInventario}):</strong> {(predDatos[eq.numeroInventario] || {}).obs}
-                              </p>
-                            ))}
+                        {/* Registro de Revisión (firmas por día del bloque) */}
+                        <div style={{ pageBreakInside: 'avoid' }}>
+                            <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '11px', margin: '15px 0 5px'}}>Registro de Revisión (Firmas)</p>
+                            <table className="tabla-formato" style={{width: '100%'}}>
+                              <thead>
+                                <tr><th style={{width: '20%', padding: '6px'}}>DÍA</th><th style={{width: '40%'}}>RESPONSABLE DEL ÁREA</th><th style={{width: '40%'}}>INGENIERÍA BIOMÉDICA</th></tr>
+                              </thead>
+                              <tbody>
+                                {bloque.map(d => (
+                                  <tr key={d}>
+                                    <td className="centro" style={{padding: '10px'}}>{String(d).padStart(2, '0')}/{String(mesP).padStart(2, '0')}/{anioP}</td>
+                                    <td>&nbsp;</td>
+                                    <td>&nbsp;</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                         </div>
 
-                        <div className="leyenda-controlado">DOCUMENTO CONTROLADO. PROHIBIDA SU REPRODUCCIÓN PARCIAL O TOTAL NO AUTORIZADA</div>
+                        {/* Observaciones */}
+                        <div style={{ pageBreakInside: 'avoid' }}>
+                            <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '11px', margin: '15px 0 5px'}}>Observaciones Generales</p>
+                            <div style={{border: '1px solid #000', minHeight: '80px', padding: '6px', fontFamily: 'Arial', fontSize: '10px'}}>
+                              {equiposPredictivos
+                                .filter(eq => ((predDatos[eq.numeroInventario] || {}).obs || '').trim() !== '')
+                                .map(eq => (
+                                  <p key={eq.id} style={{margin: '0 0 4px'}}>
+                                    <strong>{eq.nombre} ({eq.numeroInventario}):</strong> {(predDatos[eq.numeroInventario] || {}).obs}
+                                  </p>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="leyenda-controlado" style={{ marginTop: '15px' }}>DOCUMENTO CONTROLADO. PROHIBIDA SU REPRODUCCIÓN PARCIAL O TOTAL NO AUTORIZADA</div>
                       </div>
                     ))}
                   </div>
@@ -2629,7 +2631,6 @@
                 </div>
               </main>
 
-              {}
               {showAddEquipo && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 text-slate-800">
                   <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
