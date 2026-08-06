@@ -16,6 +16,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- Chart.js para el Dashboard de Indicadores -->
+    <!-- [REV-05] Se eliminó PapaParse: los indicadores ya no se leen de un
+         CSV publicado; llegan por JSONP desde la hoja "Indicadores" del
+         mismo libro de Google Sheets del inventario. -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- FontAwesome y Google Fonts -->
@@ -46,6 +49,7 @@
 
         /* ================================================================
            MEMBRETE INSTITUCIONAL HSAIP (impresión de formatos controlados)
+           Réplica del encabezado: logo | datos del hospital | título+código
            ================================================================ */
         .membrete-hsaip {
             display: grid;
@@ -96,31 +100,11 @@
         /* Estilos de Impresión */
         @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
-            @page { size: portrait; margin: 10mm; }
+            @page { size: landscape; margin: 5mm; }
             
-            /* REINICIO TOTAL PARA IMPRESIÓN (Destruye flexbox y scrollbars que causan recortes) */
-            html, body, #root, .min-h-screen, main, .max-w-7xl, .space-y-6, .overflow-y-auto, .overflow-x-auto, .overflow-hidden, .max-h-[65vh] {
-                display: block !important;
-                position: static !important;
-                height: auto !important;
-                min-height: 0 !important;
-                max-height: none !important;
-                width: auto !important;
-                max-width: none !important;
-                overflow: visible !important;
-                box-shadow: none !important;
-                flex: none !important;
-            }
-            
-            .print-hidden, aside, nav, header { display: none !important; }
+            .print-hidden { display: none !important; }
             .print-block { display: block !important; }
             main { padding: 0 !important; margin: 0 !important; }
-
-            /* Evitar que las tablas se corten y asegurar el ancho */
-            table { page-break-inside: auto; width: 100% !important; border-collapse: collapse !important; }
-            tr    { page-break-inside: avoid; page-break-after: auto; }
-            thead { display: table-header-group; }
-            tfoot { display: table-footer-group; }
             
             /* Ajustes del CMMS */
             .bg-slate-50 { background-color: white !important; }
@@ -181,9 +165,18 @@
         // CONFIGURACIÓN GLOBAL
         // ============================================================================
         const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyctwfWaVlLRZVUH9P-6Z_PvCg_91W1Yc4sgFym72udvRq310JKk8p4GJR22Sqp-Ano/exec"; 
+        // [REV-05] GOOGLE_SHEET_CSV_URL eliminada: el dashboard de indicadores
+        // ahora lee la hoja "Indicadores" del MISMO libro del inventario, en la
+        // misma llamada getAll. Ya puedes des-publicar el CSV en Sheets
+        // (Archivo -> Compartir -> Publicar en la web -> Dejar de publicar),
+        // con lo que esos datos dejan de estar expuestos públicamente.
 
         // ====================================================================
         // [SEC] SESIÓN DE ACCESO
+        // --------------------------------------------------------------------
+        // El PIN se valida en el SERVIDOR (Codigo.gs), que resuelve el nombre
+        // del usuario y registra cada intento —válido o no— en la hoja
+        // "Accesos". Aquí solo se guarda la sesión activa del navegador.
         // ====================================================================
         const SESION = {
             get pin() { try { return window.localStorage.getItem('cmms_pin') || ''; } catch (e) { return ''; } },
@@ -204,12 +197,17 @@
 
         // ====================================================================
         // [PERF] CACHÉ LOCAL DE DATOS (arranque instantáneo)
+        // --------------------------------------------------------------------
+        // Al abrir la app se pintan de inmediato los datos de la última
+        // sincronización guardada en este navegador, y el getAll corre en
+        // segundo plano para reemplazarlos ("stale-while-revalidate"). Se
+        // borra al cerrar sesión para no dejar datos en equipos compartidos.
         // ====================================================================
         const CACHE_LOCAL = {
             guardar(datos) {
                 try {
                     window.localStorage.setItem('cmms_cache', JSON.stringify({ t: Date.now(), datos }));
-                } catch (e) {}
+                } catch (e) { /* cuota llena: la app funciona igual, solo sin arranque rápido */ }
             },
             leer() {
                 try {
@@ -222,8 +220,12 @@
             }
         };
 
+        // [PERF] Expedientes ya consultados en esta sesión: volver a la ficha
+        // de un equipo no vuelve a preguntar a Drive (el botón Actualizar sí).
         const CACHE_EXPEDIENTES = new Map();
 
+        // Normaliza Si/SI/Sí/sí/S/1/TRUE -> true. Evita depender de la
+        // escritura exacta capturada en la hoja de cálculo.
         const esAfirmativo = (v) => {
             if (v === true) return true;
             if (v === null || v === undefined) return false;
@@ -233,6 +235,8 @@
             return s === 'SI' || s === 'S' || s === 'TRUE' || s === '1' || s === 'VIGENTE';
         };
 
+        // Normaliza texto para comparaciones: sin acentos, mayúsculas, sin
+        // espacios extra. La hoja mezcla "En Servicio" y "EN SERVICIO".
         const normTexto = (v) => String(v || '').trim()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, ' ')
@@ -244,19 +248,36 @@
 
         // ============================================================================
         // GENERADOR DE ETIQUETAS DE IDENTIFICACIÓN DE EQUIPO
+        // ----------------------------------------------------------------------------
+        // El QR es fijo: apunta a la aplicación CMMS (base de datos de equipos).
+        // Va incrustado en base64 para que la etiqueta se genere e imprima aunque
+        // la red del hospital bloquee CDNs externas o no haya internet.
         // ============================================================================
         const QR_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAFAAQAAAADl65gHAAADU0lEQVR42u1bS66jQAwsnkZ67Nw3IPc/VecGxY5ZeRa2u+mE33ZokFAgtBKlVHaVCzIorm0/eBb+5wuhtFdRVTsWCkXV9nL1wfF7Y4OjIShKiCoBUYqdElKudo8jsQAEErBwwQgQqcGRxsHKS9orDVJguooje+JjA+N6oShF38OQAOE8DC/JT3+sW4o6Znljc6Hk+YV5yvJ+eZvM8+vgq9N2q7gjjulwUQLwB4AoMBt0aeIMCDHLO2GAlKt985F7Cxa/+gPMwzAMLwBzgrwT7Ch65l+/+tT1DhNDZ2Kja/NqW7/RO47jMYxQTgyRIUQ5hYt0zQYwGY7cd0896nVb25WIdMsjhZzEZO5cTvl4X53hsoYrmDimFVMXn2eEEzGxuMeocLPiqrnOMzzouUb0m/Ixnc2FdZSxPYYZbY467o+pIkkAC52CLDRlzIVe2jYUxixD+HD4zNdXcgrlZCCKaobjBinMlKrXvMLyu+p1aoRgTG3DRK1l9zqIGrdG6cHFw8dtdeU6NyvxzsrzmL64I/qqa+4bqXviyI3fzZaPSqFHZCyJjwSgnkY+fDyZaQxFd9xSICWkzDRX/OOdcaxmkVtUZO2PnjXGGFPp6RR99NrxSrvzhxLCKSpZdKu6q86wRxx5OsN5f0SkO7Jqloz+aJg+fNx0e6nho4SD5KTV6njJZ9nKe7j3mXecZxiJT2rCcC4VCC0ao2WmXilPqHbXfLzQzaCWUAjFuCi5CDVreibNPMOjmebW/nG/IjUI6ZNglWgW//jo9YW8x/W6mQN1lfyI8rf0xxOGj/fEMV347SWyrbMLo0M6S7Xv/mgufLHELK2EJ5hTdcYKOn9GFKLZJbzV6x39Z4c5BbAYlkVPpDbJ8qgP8OHDO+RjGm0/UBz34cXwaA6RwRTzjRKyfM3Xaftjl3vzkQdzTX3ejChxON2Ie6d89LoFkfU0RZrrZZyF+NUM1Gd64pYNJK/4mACM0W63umS3zz/WiKfeK2S9NeOK88zXX6QZvZelFkchIBlN/pjxy22dSZ+nY284fuYUq8jR7yi4B48bYDjtj7y1fwRS9DLuaqyuHqbQHBJd/Xfc1j5NkG5d1+dJRdFrhlqHYpuljKd/Tr+aXdZ1bMPzn4puFv4DqpI0U2+dvBcAAAAASUVORK5CYII=';
 
+        // ============================================================================
+        // ETIQUETA ZEBRA 57 x 31 mm @ 300 dpi (12 dots/mm)
+        // ----------------------------------------------------------------------------
+        // Tamaño nativo: 684 x 372 dots. Se renderiza a 2x para nitidez.
+        // El QR se fija en 24 mm (no ocupa todo el alto) para liberar ancho al
+        // texto: la zona de datos pasa de 18.8 mm a 29.4 mm.
+        // QR versión 5 (37x37 módulos) -> módulo de 0.65 mm = 7.8 dots @300dpi,
+        // casi el doble del mínimo de 4 dots recomendado por Zebra.
+        //
+        // NOTA: subir de 203 a 300 dpi da MÁS NITIDEZ, no más tamaño. El texto
+        // se agrandó explícitamente (~38%) en las constantes T_* de abajo.
+        // ============================================================================
         const ETQ_ANCHO_MM = 57;
         const ETQ_ALTO_MM  = 31;
-        const ETQ_DPMM     = 12;   
-        const ETQ_ESCALA   = 2;    
-        const ETQ_QR_MM    = 24;   
+        const ETQ_DPMM     = 12;   // 300 dpi
+        const ETQ_ESCALA   = 2;    // supermuestreo
+        const ETQ_QR_MM    = 24;   // lado del QR en mm
 
-        const ETQ_W = ETQ_ANCHO_MM * ETQ_DPMM * ETQ_ESCALA;  
-        const ETQ_H = ETQ_ALTO_MM  * ETQ_DPMM * ETQ_ESCALA;  
-        const DPMM  = ETQ_DPMM * ETQ_ESCALA;                 
+        const ETQ_W = ETQ_ANCHO_MM * ETQ_DPMM * ETQ_ESCALA;  // 1368
+        const ETQ_H = ETQ_ALTO_MM  * ETQ_DPMM * ETQ_ESCALA;  // 744
+        const DPMM  = ETQ_DPMM * ETQ_ESCALA;                 // dots por mm en lienzo
 
+        // Reduce el tamaño hasta que el texto quepa; nunca baja del mínimo legible
         const ajustarTexto = (ctx, texto, maxAncho, tamInicial, tamMinimo) => {
             let t = tamInicial;
             while (t > tamMinimo) {
@@ -267,6 +288,7 @@
             return tamMinimo;
         };
 
+        // Parte el texto en líneas que quepan en maxAncho
         const partirTexto = (ctx, texto, maxAncho) => {
             const palabras = String(texto).split(/\s+/).filter(Boolean);
             const lineas = [];
@@ -280,6 +302,9 @@
             return lineas;
         };
 
+        /**
+         * Dibuja la etiqueta 50x30 mm del equipo y devuelve el dataURL PNG.
+         */
         const generarEtiqueta = (equipo) => {
             return new Promise((resolve, reject) => {
                 const canvas = document.createElement('canvas');
@@ -293,19 +318,23 @@
                 img.onload = () => {
                     const margen = Math.round(1.2 * DPMM);
 
+                    // --- QR cuadrado a la izquierda, centrado verticalmente ---
                     const qrLado = Math.round(ETQ_QR_MM * DPMM);
-                    ctx.imageSmoothingEnabled = false;   
+                    ctx.imageSmoothingEnabled = false;   // bordes limpios
                     ctx.drawImage(img, margen, Math.round((ETQ_H - qrLado) / 2), qrLado, qrLado);
                     ctx.imageSmoothingEnabled = true;
 
+                    // --- Zona de texto a la derecha ---
                     const xIni = margen + qrLado + Math.round(1.5 * DPMM);
                     const aw = ETQ_W - xIni - margen;
                     const cx = xIni + aw / 2;
 
-                    const T_INV = Math.round(3.6 * DPMM);   
-                    const T_NOM = Math.round(2.6 * DPMM);   
-                    const T_CPO = Math.round(2.2 * DPMM);   
-                    const T_MIN = Math.round(1.5 * DPMM);   
+                    // Tamaños expresados en mm reales de altura de letra.
+                    // Aumentados ~38% respecto al formato 50x30 mm.
+                    const T_INV = Math.round(3.6 * DPMM);   // número de inventario
+                    const T_NOM = Math.round(2.6 * DPMM);   // nombre del equipo
+                    const T_CPO = Math.round(2.2 * DPMM);   // marca / modelo / serie
+                    const T_MIN = Math.round(1.5 * DPMM);   // piso legible térmico
 
                     ctx.fillStyle = '#000000';
                     ctx.textAlign = 'center';
@@ -313,6 +342,7 @@
 
                     const lineas = [];
 
+                    // Nombre: máximo 2 líneas
                     ctx.font = `bold ${T_NOM}px Arial, Helvetica, sans-serif`;
                     partirTexto(ctx, equipo.nombre || '-', aw)
                         .slice(0, 2)
@@ -337,6 +367,7 @@
 
                     const inv = String(equipo.numeroInventario || '');
 
+                    // Escala vertical si el bloque no cabe
                     let total = lineas.reduce((a, l) => a + l.tam * 1.26, 0);
                     if (inv) total += T_INV * 1.32;
                     const disp = ETQ_H - 2 * margen;
@@ -350,6 +381,7 @@
                         y += l.tam * esc * 1.26;
                     });
 
+                    // Número de inventario destacado al pie
                     if (inv) {
                         const tam = ajustarTexto(ctx, inv, aw, Math.round(T_INV * esc), T_MIN);
                         ctx.font = `bold ${tam}px Arial, Helvetica, sans-serif`;
@@ -366,7 +398,12 @@
         const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
         // ============================================================================
-        // CAPA DE TRANSPORTE JSONP
+        // [FIX-01] CAPA DE TRANSPORTE JSONP
+        // ----------------------------------------------------------------------------
+        // Google Apps Script (ContentService) NO devuelve encabezados CORS.
+        // Un fetch() normal desde GitHub Pages es bloqueado por el navegador y
+        // response.json() lanza excepción -> el inventario quedaba vacío en silencio.
+        // JSONP inyecta un <script>, que no está sujeto a la política CORS.
         // ============================================================================
         let __jsonpId = 0;
 
@@ -395,6 +432,11 @@
                     else resolve(data);
                 };
 
+                // [SEC] Toda petición viaja con la sesión activa. El backend
+                // valida el PIN, resuelve el nombre real del usuario y registra
+                // el acceso en la hoja "Accesos". Los parámetros explícitos
+                // (p. ej. el PIN capturado en la pantalla de login) tienen
+                // prioridad sobre los de la sesión guardada.
                 const qs = new URLSearchParams({
                     pin: SESION.pin,
                     ua: (navigator.userAgent || '').slice(0, 150),
@@ -412,6 +454,7 @@
             });
         };
 
+        // Reintentos con espera progresiva: absorbe cuotas y cortes de red del hospital
         const jsonpConReintentos = async (params, intentos = 3) => {
             let ultimoError;
             for (let i = 0; i < intentos; i++) {
@@ -440,6 +483,15 @@
 
         const mesesAbreviados = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
+        // ============================================================================
+        // [NEW-09] FOLIO AUTOMÁTICO DE INVENTARIO
+        // ----------------------------------------------------------------------------
+        // Esta función solo genera una VISTA PREVIA en el cliente (para que el
+        // formulario muestre algo mientras se captura). El folio real y definitivo
+        // lo asigna el backend de forma atómica dentro del LockService
+        // (generarSiguienteNumeroInventario en Codigo.gs), así dos altas
+        // simultáneas nunca terminan con el mismo número.
+        // ============================================================================
         const PREFIJOS_INVENTARIO = { Propio: 'PAT', Comodato: 'CPAT', Renta: 'RPAT' };
 
         const previsualizarSiguienteFolio = (origen, listaEquipos) => {
@@ -456,8 +508,11 @@
             return `${prefijo}${max + 1}`;
         };
 
+        // Tamaño de página del listado de Inventario (evita saturar la pantalla
+        // con hojas de 1000+ equipos).
         const INVENTARIO_PAGE_SIZE = 30;
 
+        // Función Compartida: Proyectar Meses
         const obtenerMesesProgramados = (ultimoMantenimiento, frecuencia, targetYear) => {
             const mesesProgramados = new Set();
             if (!ultimoMantenimiento || !frecuencia) return mesesProgramados;
@@ -496,6 +551,7 @@
             return `${date.getFullYear()}-${m < 10 ? '0' : ''}${m}`; 
         };
 
+        // Función Compartida: Limpiar Historial
         const limpiarHistorial = (str) => {
             if (!str) return [];
             return String(str).split(',').map(s => {
@@ -504,6 +560,7 @@
             }).filter(Boolean);
         };
 
+        // Función Compartida: Verificar Cumplimiento ±1 Mes
         const verificarCumplimiento = (historialEjecuciones, targetMonthIndex, targetYear) => {
             if (!historialEjecuciones) return false;
             const ejecutados = limpiarHistorial(historialEjecuciones);
@@ -521,7 +578,7 @@
         };
 
         // ============================================================================
-        // COMPONENTE: DASHBOARD DE INDICADORES
+        // COMPONENTE: DASHBOARD DE INDICADORES (Oscuro)
         // ============================================================================
         const IndicadoresDashboard = ({ equipos, indicadores, sincronizando, errorSync }) => {
             const [dataSet, setDataSet] = useState({});
@@ -532,6 +589,7 @@
             const [error, setError] = useState(false);
             const [dashYear, setDashYear] = useState(new Date().getFullYear()); 
 
+            // Refs para los canvas de Chart.js
             const ratioChartRef = useRef(null);
             const downtimeChartRef = useRef(null);
             const budgetChartRef = useRef(null);
@@ -539,6 +597,9 @@
             const expenseTrendChartRef = useRef(null);
             const chartInstances = useRef({});
 
+            // [REV-05] Los indicadores llegan en el mismo getAll que el
+            // inventario, desde la hoja "Indicadores" del mismo libro.
+            // Ya no hay una segunda descarga (CSV) ni datos publicados aparte.
             useEffect(() => {
                 if (sincronizando) { setIsLoading(true); return; }
                 if (errorSync && (!indicadores || indicadores.length === 0)) {
@@ -564,6 +625,8 @@
                 let tempDataSet = {}; 
                 let histMeses = [], histMP = [], histGasto = [];
 
+                // [FIX] El histórico se ordena por mes calendario aunque las
+                // filas de la hoja estén capturadas en otro orden.
                 const ordenadas = (rows || []).slice().sort((a, b) =>
                     ORDEN_MESES.indexOf(String(a.mes || '').trim().toLowerCase()) -
                     ORDEN_MESES.indexOf(String(b.mes || '').trim().toLowerCase())
@@ -772,6 +835,8 @@
                 </div>
             );
 
+            // [REV-05] Hoja Indicadores existente pero sin filas capturadas:
+            // antes esto dejaba el spinner girando para siempre.
             if (!currentData) return (
                 <div className="flex flex-col items-center justify-center p-12 text-center h-full text-slate-800">
                     <i className="fa-solid fa-table-list text-6xl text-slate-300 mb-4"></i>
@@ -966,8 +1031,16 @@
 
         // ============================================================================
         // [REV-09] MEMBRETE INSTITUCIONAL PARA IMPRESIÓN DE FORMATOS
+        // ----------------------------------------------------------------------------
+        // Réplica del encabezado oficial: logo | datos del hospital | título + código
+        // de documento controlado + campos variables (EQUIPO, ÁREA, MES...).
+        // El logotipo oficial va INCRUSTADO (base64) en este mismo archivo:
+        // no depende de ningún archivo externo y se imprime idéntico en
+        // cualquier equipo. Para sustituirlo, reemplaza la cadena base64 o
+        // pon una ruta normal (p. ej. 'logo-hsaip.png') en LOGO_HSAIP_URL.
+        // Si se deja vacío, se dibuja una versión aproximada con CSS.
         // ============================================================================
-        const LOGO_HSAIP_URL = ''; // Puedes pegar la cadena base64 de tu logo oficial aquí
+        const LOGO_HSAIP_URL = 'data:image/png;base64,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';
 
         const MembreteHSAIP = ({ titulo, codigo, campos }) => (
             <div className="membrete-hsaip">
@@ -1009,7 +1082,12 @@
         );
 
         // ============================================================================
-        // PROGRAMA DE REVISIÓN SEMANAL (Calendario FOR-INB-008)
+        // [REV-09] PROGRAMA DE REVISIÓN SEMANAL (Calendario FOR-INB-008)
+        // ----------------------------------------------------------------------------
+        // Define qué áreas se revisan a diario y cuáles un día fijo por semana
+        // (0=Domingo ... 6=Sábado). La detección es por fragmento de texto sin
+        // acentos sobre el nombre del área del inventario; si un área no
+        // coincide, el módulo permite elegir la frecuencia a mano.
         // ============================================================================
         const PROGRAMA_REVISION = {
             diarias: ['QUIROFANO', 'QX', 'CEYE', 'C.E.Y.E', 'HEMODINAMIA', 'HEMO'],
@@ -1028,6 +1106,7 @@
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .toUpperCase().trim();
 
+        /** Devuelve 'D' (diaria), 0-6 (día de la semana) o null si no coincide. */
         const detectarFrecuenciaArea = (area) => {
             const a = normalizarTexto(area);
             if (!a) return null;
@@ -1042,6 +1121,7 @@
         const LETRAS_DIAS = ['D', 'L', 'M', 'Mi', 'J', 'V', 'S'];
         const NOMBRES_MESES_LARGOS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
+        /** Días del mes (yyyy-MM) que tocan según la frecuencia elegida. */
         const diasProgramados = (mesStr, frecuencia) => {
             const [anio, mes] = String(mesStr || '').split('-').map(n => parseInt(n, 10));
             if (!anio || !mes) return [];
@@ -1054,7 +1134,12 @@
         };
 
         // ============================================================================
-        // PANTALLA DE ACCESO
+        // [SEC] PANTALLA DE ACCESO
+        // ----------------------------------------------------------------------------
+        // El PIN NO se valida aquí (el HTML es público en GitHub Pages y cualquiera
+        // puede leerlo): se envía al backend, que lo compara contra CLAVES_ACCESO,
+        // resuelve el nombre del usuario y registra el intento —válido o fallido—
+        // en la hoja "Accesos" del libro de Google Sheets.
         // ============================================================================
         const PantallaAcceso = ({ onAcceso }) => {
             const [pin, setPin] = useState('');
@@ -1136,7 +1221,14 @@
         };
 
         // ============================================================================
-        // EXPEDIENTE DIGITAL DEL EQUIPO (Google Drive)
+        // [NEW-14] EXPEDIENTE DIGITAL DEL EQUIPO (Google Drive)
+        // ----------------------------------------------------------------------------
+        // Cada equipo tiene una carpeta en Drive ("Nombre del equipo + No. de
+        // inventario") con su manual y sus órdenes de servicio nombradas con
+        // prefijo + fecha (OSMP 2026-05-12, OSMC_20260311, ...). El backend la
+        // localiza, clasifica y devuelve el historial; el visor integrado trae
+        // el documento en base64, así el personal lo consulta sin necesitar
+        // permisos de Drive. Toda consulta queda registrada en "Accesos".
         // ============================================================================
         const TIPOS_ORDEN = {
             OSMP: { label: 'Preventivo',  icono: 'fa-calendar-check', clase: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
@@ -1151,6 +1243,7 @@
             const [cargandoDocs, setCargandoDocs] = useState(true);
             const [errorDocs, setErrorDocs] = useState(null);
             const [filtroTipo, setFiltroTipo] = useState('TODAS');
+            // visor: { nombre, cargando } mientras descarga; luego { nombre, url, mime }
             const [visor, setVisor] = useState(null);
 
             const cargarExpediente = async (forzar) => {
@@ -1159,6 +1252,8 @@
                     setCargandoDocs(false);
                     return;
                 }
+                // [PERF] Ficha ya consultada en esta sesión: respuesta inmediata
+                // sin volver a preguntar a Drive. "Actualizar" fuerza el refresco.
                 if (!forzar && CACHE_EXPEDIENTES.has(equipo.numeroInventario)) {
                     setDocs(CACHE_EXPEDIENTES.get(equipo.numeroInventario));
                     setErrorDocs(null);
@@ -1171,7 +1266,7 @@
                     const r = await jsonpConReintentos({
                         action: 'getDocumentosEquipo',
                         inventario: equipo.numeroInventario,
-                        refrescar: forzar ? '1' : '0'
+                        refrescar: forzar ? '1' : '0'   // salta también la caché del servidor
                     });
                     setDocs(r);
                     if (r && r.encontrada) CACHE_EXPEDIENTES.set(equipo.numeroInventario, r);
@@ -1186,12 +1281,14 @@
                 setDocs(null);
                 setFiltroTipo('TODAS');
                 cargarExpediente();
+                // Al desmontar, libera el blob del visor si quedó abierto
                 return () => setVisor(v => { if (v && v.url) URL.revokeObjectURL(v.url); return null; });
             }, [equipo.numeroInventario]);
 
             const abrirDocumento = async (archivo) => {
                 setVisor({ nombre: archivo.nombre, cargando: true });
                 try {
+                    // 60s de espera: los PDF escaneados pueden pesar varios MB
                     const r = await jsonpRequest({ action: 'getArchivo', id: archivo.id }, 60000);
                     if (r && r.ok && r.base64) {
                         const bin = atob(r.base64);
@@ -1200,11 +1297,13 @@
                         const blob = new Blob([bytes], { type: r.mime || 'application/octet-stream' });
                         setVisor({ nombre: r.nombre, url: URL.createObjectURL(blob), mime: r.mime || '' });
                     } else {
+                        // Archivo demasiado grande para el visor: se abre en Drive
                         setVisor(null);
                         if (r && r.motivo) alert(r.motivo);
                         window.open((r && r.url) || archivo.url, '_blank');
                     }
                 } catch (err) {
+                    // Cualquier falla del visor degrada a abrir el archivo en Drive
                     setVisor(null);
                     window.open(archivo.url, '_blank');
                 }
@@ -1304,6 +1403,7 @@
 
                     {!cargandoDocs && !errorDocs && docs && docs.encontrada && (
                         <div className="space-y-4">
+                            {/* Manuales del equipo */}
                             {docs.manuales.length > 0 && (
                                 <div className="flex flex-wrap items-center gap-2">
                                     <span className="text-xs font-bold text-gray-500 uppercase tracking-wider mr-1"><i className="fas fa-book mr-1"></i> Manuales:</span>
@@ -1316,6 +1416,7 @@
                                 </div>
                             )}
 
+                            {/* Filtros por tipo de orden */}
                             <div className="flex flex-wrap gap-2 print-hidden">
                                 {['TODAS', 'OSMP', 'OSMC', 'OSI', 'OSB', 'OSA'].map(t => {
                                     const activo = filtroTipo === t;
@@ -1329,6 +1430,7 @@
                                 })}
                             </div>
 
+                            {/* Historial de órdenes de servicio */}
                             <div className="border border-gray-200 rounded-lg overflow-hidden">
                                 <div className="overflow-x-auto max-h-80 overflow-y-auto">
                                     <table className="w-full text-left border-collapse">
@@ -1344,7 +1446,7 @@
                                             {ordenesVisibles.length === 0 ? (
                                                 <tr><td colSpan="4" className="p-6 text-center text-gray-400 text-sm italic">
                                                     {conteosPorTipo.TODAS === 0
-                                                        ? 'La carpeta no contiene órdenes de servicio reconocibles (prefijo OSMP / OSMC / OSI / OSB / OSA).'
+                                                        ? 'La carpeta no contiene órdenes de servicio reconocibles (prefijo OSMP / OSMC / OSI / OSB / OSA, o formato "OS-Preventivo-...", "OS-Correctivo-...", "OS-Instalacion-...", "OS-Baja-...", "OS-Asistencia-...").'
                                                         : 'No hay órdenes de este tipo.'}
                                                 </td></tr>
                                             ) : (
@@ -1355,6 +1457,7 @@
                                 </div>
                             </div>
 
+                            {/* Otros documentos de la carpeta */}
                             {docs.otros.length > 0 && (
                                 <details className="text-sm">
                                     <summary className="cursor-pointer text-gray-500 font-medium hover:text-gray-700 select-none">
@@ -1373,6 +1476,7 @@
                         </div>
                     )}
 
+                    {/* Visor de documentos integrado */}
                     {visor && (
                         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 print-hidden" onClick={cerrarVisor}>
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
@@ -1429,9 +1533,12 @@
           const [syncError, setSyncError] = useState(null);
           const [ultimaSync, setUltimaSync] = useState(null);
           const [bitacora, setBitacora] = useState([]);
+          // [REV-05] Filas de la hoja "Indicadores" (mismo libro del inventario)
           const [indicadores, setIndicadores] = useState([]);
+          // [SEC] Usuario de la sesión activa; el nombre lo resuelve el backend
+          // a partir del PIN, nunca lo declara el cliente.
           const [usuarioActivo, setUsuarioActivo] = useState(SESION.usuario);
-
+          // [REV-09] Módulo de Mantenimientos Predictivos (revisión rutinaria)
           const [predMes, setPredMes] = useState(() => {
             const h = new Date();
             return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
@@ -1439,23 +1546,23 @@
           const [predArea, setPredArea] = useState('');
           const [predOrigen, setPredOrigen] = useState('Todos');
           const [predFrecuencia, setPredFrecuencia] = useState('D');
-          const [predDatos, setPredDatos] = useState({});   
+          const [predDatos, setPredDatos] = useState({});   // inventario -> { dias:{1:'OK'}, obs }
           const [predCargando, setPredCargando] = useState(false);
-          
+          // Técnico responsable: se adjunta a cada folio de bitácora (trazabilidad)
           const [tecnicoActivo, setTecnicoActivo] = useState(() => {
             try { return window.localStorage.getItem('cmms_tecnico') || ''; } catch (e) { return ''; }
           });
-          
           useEffect(() => {
             try { window.localStorage.setItem('cmms_tecnico', tecnicoActivo); } catch (e) {}
           }, [tecnicoActivo]);
-          
           const [showAddEquipo, setShowAddEquipo] = useState(false);
+          
           const [searchTerm, setSearchTerm] = useState('');
           const [filterEstatus, setFilterEstatus] = useState('Todos');
           const [filterUbicacion, setFilterUbicacion] = useState('Todas');
           const [paginaActual, setPaginaActual] = useState(0);
           
+          // Filtros Calendario
           const [filterUbicacionCal, setFilterUbicacionCal] = useState('Todas');
           const [filterMesCal, setFilterMesCal] = useState('Todos');
           const [searchControlCal, setSearchControlCal] = useState('');
@@ -1470,6 +1577,9 @@
           };
           const [nuevoEquipo, setNuevoEquipo] = useState(estadoInicialEquipo);
 
+          // [SEC + PERF] Con sesión activa: primero se pintan los datos de la
+          // última sincronización guardada en este navegador (arranque
+          // instantáneo) y el getAll corre en segundo plano para actualizarlos.
           useEffect(() => {
             if (!usuarioActivo) return;
             const cacheado = CACHE_LOCAL.leer();
@@ -1487,7 +1597,7 @@
 
           const cerrarSesion = () => {
             SESION.limpiar();
-            CACHE_LOCAL.limpiar();       
+            CACHE_LOCAL.limpiar();       // [SEC] no dejar datos en equipos compartidos
             CACHE_EXPEDIENTES.clear();
             setUsuarioActivo('');
             setEquipos([]);
@@ -1511,6 +1621,7 @@
             });
           }, [equipos, inventarioTab, searchTerm, filterEstatus, filterUbicacion]);
 
+          // [NEW] Paginación del listado de Inventario: 30 resultados por página.
           const totalPaginasInventario = Math.max(1, Math.ceil(equiposFiltrados.length / INVENTARIO_PAGE_SIZE));
           const paginaSegura = Math.min(paginaActual, totalPaginasInventario - 1);
           const equiposPagina = useMemo(() => {
@@ -1518,11 +1629,13 @@
               return equiposFiltrados.slice(inicio, inicio + INVENTARIO_PAGE_SIZE);
           }, [equiposFiltrados, paginaSegura]);
 
+          // [FIX] "Todas" se fija primero; el resto se ordena con acentos correctos.
           const ubicacionesUnicas = useMemo(() => {
               const locs = equipos.filter(e => e.origen === inventarioTab).map(e => e.ubicacion).filter(u => u && u.trim() !== '');
               return ['Todas', ...Array.from(new Set(locs)).sort((a, b) => a.localeCompare(b, 'es'))];
           }, [equipos, inventarioTab]);
 
+          // [NEW-09] Vista previa del siguiente folio para el formulario de alta.
           const siguienteFolioPreview = useMemo(
               () => previsualizarSiguienteFolio(nuevoEquipo.origen, equipos),
               [nuevoEquipo.origen, equipos]
@@ -1531,13 +1644,20 @@
           const equiposCalendario = useMemo(() => {
               return equipos.filter(e => {
                   if (e.origen !== inventarioTab) return false;
+                  
+                  // FILTRO: Excluir equipos sin frecuencia definida
                   if (!e.frecuenciaMantenimiento || e.frecuenciaMantenimiento === '') return false;
+                  
+                  // FILTRO: Excluir BAJA DEFINITIVA del calendario
                   if (esBajaDefinitiva(e)) return false;
+
                   if (filterUbicacionCal !== 'Todas' && e.ubicacion !== filterUbicacionCal) return false;
+                  
                   if (searchControlCal) {
                       const s = searchControlCal.toLowerCase();
                       if (!String(e.numeroInventario || '').toLowerCase().includes(s)) return false;
                   }
+
                   if (filterMesCal !== 'Todos') {
                       const monthIdx = parseInt(filterMesCal, 10);
                       const programados = obtenerMesesProgramados(e.ultimoMantenimiento, e.frecuenciaMantenimiento, calendarYear);
@@ -1547,6 +1667,7 @@
               });
           }, [equipos, inventarioTab, filterUbicacionCal, filterMesCal, searchControlCal, calendarYear]);
 
+          // [FIX] Sincronización vía JSONP + errores visibles para el usuario
           const handleSyncSheets = async () => {
             setIsSyncing(true);
             setSyncError(null);
@@ -1557,6 +1678,8 @@
             }
             try {
               const data = await jsonpConReintentos({ action: 'getAll' });
+
+              // [FIX-06] Conserva el id real del backend; ya no genera "Propio-undefined"
               const procesarHoja = (arr, origen) => (arr || [])
                 .filter(e => e.numeroInventario || e.nombre)
                 .map(e => ({
@@ -1573,9 +1696,10 @@
 
               setEquipos(consolidado);
               setBitacora(data.bitacora || []);
-              setIndicadores(data.indicadores || []); 
+              setIndicadores(data.indicadores || []); // [REV-05] misma hoja de cálculo
               setUltimaSync(data.sincronizado || new Date().toLocaleString('es-MX'));
 
+              // [PERF] Persistir para el arranque instantáneo de la próxima visita
               CACHE_LOCAL.guardar({
                 equipos: consolidado,
                 indicadores: data.indicadores || [],
@@ -1584,7 +1708,7 @@
               });
 
               if (consolidado.length === 0) {
-                setSyncError('El backend respondió correctamente, pero no devolvió equipos.');
+                setSyncError('El backend respondió correctamente, pero no devolvió equipos. Verifica los nombres de las hojas (Propio, Comodato, Renta) y que tengan datos.');
               }
             } catch (error) {
               console.error(error);
@@ -1595,6 +1719,7 @@
             }
           };
 
+          // [FIX] Guardado confirmado: si falla, revierte el estado local
           const directSaveToSheets = async (equipo, estadoPrevio) => {
             if (!GOOGLE_SHEETS_WEBAPP_URL) return false;
             setIsSyncing(true);
@@ -1613,6 +1738,8 @@
               setUltimaSync(new Date().toLocaleString('es-MX'));
               return true;
             } catch (error) {
+              console.error(error);
+              // Revierte para que la pantalla no muestre datos que no se persistieron
               if (estadoPrevio) setEquipos(estadoPrevio);
               if (esAccesoDenegado(error)) { cerrarSesion(); return false; }
               setSyncError('No se guardó en Google Sheets: ' + error.message);
@@ -1633,6 +1760,9 @@
 
           const handleAddEquipo = async (e) => {
             e.preventDefault();
+
+            // Validación previa: evita altas incompletas en el inventario.
+            // [NEW-09] Ya no se valida numeroInventario aquí: lo asigna el servidor.
             if (!nuevoEquipo.nombre || !nuevoEquipo.ubicacion) {
               setSyncError('El nombre del equipo y el área/ubicación son obligatorios.');
               return;
@@ -1645,6 +1775,9 @@
             setIsSyncing(true);
             setSyncError(null);
             try {
+              // [NEW-09] El backend calcula el folio real (PAT/CPAT/RPAT + consecutivo)
+              // de forma atómica y lo regresa en la respuesta; esto evita folios
+              // duplicados si dos personas dan de alta equipo al mismo tiempo.
               const resultado = await jsonpConReintentos({
                 action: 'save',
                 payload: JSON.stringify({ action: 'add', data: nuevoEquipo, sheetName: nuevoEquipo.origen })
@@ -1684,6 +1817,7 @@
               setEquipos(equipos.map(eq => eq.id === updatedEquipo.id ? updatedEquipo : eq));
 
               directSaveToSheets(updatedEquipo, estadoPrevio).then(ok => {
+                // [NEW-07] Al marcar ejecutado, levanta folio en bitácora
                 if (ok && ejecutando) {
                   jsonpConReintentos({
                     action: 'save',
@@ -1712,6 +1846,10 @@
             return 'bg-gray-100 text-gray-800 border-gray-300'; 
           };
 
+          // ============================================================================
+          // ETIQUETA DE IDENTIFICACIÓN DEL EQUIPO
+          // Vista previa + descarga PNG + impresión directa
+          // ============================================================================
           const EtiquetaEquipo = ({ equipo }) => {
             const [imgUrl, setImgUrl] = useState(null);
             const [errorEtiqueta, setErrorEtiqueta] = useState(null);
@@ -1750,6 +1888,9 @@
                 setErrorEtiqueta('El navegador bloqueó la ventana emergente. Permite las ventanas emergentes para imprimir.');
                 return;
               }
+              // Tamaño físico exacto: la Zebra debe recibir 50x30 mm, sin
+              // reescalado del navegador. margin:0 + size fijo evita que el
+              // driver aplique "ajustar a página" y deforme la etiqueta.
               v.document.write(
                 '<html><head><title>' + nombreArchivo() + '</title>' +
                 '<style>' +
@@ -1811,6 +1952,7 @@
             );
           };
 
+          // Banner de diagnóstico: los fallos ya no son silenciosos
           const BannerEstado = () => {
             if (syncError) {
               return (
@@ -1837,6 +1979,16 @@
             return null;
           };
 
+          // ==================================================================
+          // [REV-09] MANTENIMIENTOS PREDICTIVOS — lógica
+          // ==================================================================
+          // Los equipos salen del INVENTARIO (hojas Propio/Comodato/Renta) y
+          // solo se consideran los que están EN SERVICIO: un equipo marcado
+          // "Fuera de Servicio" (incluida la baja definitiva) no forma parte
+          // de la revisión rutinaria. Los registros sin estatus capturado se
+          // incluyen para no ocultar equipos por datos incompletos, y el
+          // conteo de excluidos se muestra en la cabecera de la tabla.
+
           const areasPredictivos = useMemo(() => {
             const base = equipos.filter(e =>
               (predOrigen === 'Todos' || e.origen === predOrigen) && !estaFueraServicio(e));
@@ -1853,6 +2005,7 @@
               .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es'));
           }, [equipos, predArea, predOrigen]);
 
+          /** Equipos del área excluidos por estar fuera de servicio (informativo). */
           const excluidosPredictivos = useMemo(() => {
             if (!predArea) return [];
             return equipos.filter(e => e.ubicacion === predArea &&
@@ -1860,12 +2013,14 @@
                                        estaFueraServicio(e));
           }, [equipos, predArea, predOrigen]);
 
+          // Al cambiar de área, propone la frecuencia del programa semanal
           useEffect(() => {
             if (!predArea) return;
             const f = detectarFrecuenciaArea(predArea);
             setPredFrecuencia(f === null ? 'D' : f);
           }, [predArea]);
 
+          // Carga las marcas guardadas del mes+área
           useEffect(() => {
             if (!predArea || !predMes || !usuarioActivo) { setPredDatos({}); return; }
             let cancelado = false;
@@ -1905,20 +2060,20 @@
             })
           });
 
+          /** Clic en una celda-día: vacío -> ✓ OK -> ✗ Falla -> vacío. */
           const ciclarMarcaPredictivo = (equipo, dia) => {
             const inv = equipo.numeroInventario;
             if (!inv) { setSyncError('El equipo no tiene número de inventario; no se puede registrar su revisión.'); return; }
             const actual = ((predDatos[inv] || {}).dias || {})[dia] || '';
             const siguiente = actual === '' ? 'OK' : (actual === 'OK' ? 'F' : '');
             const previo = predDatos;
-            
+            // Optimista: se marca de inmediato y se revierte si falla el guardado
             setPredDatos(prev => {
               const fila = prev[inv] || { dias: {}, obs: '' };
               const dias = { ...fila.dias };
               if (siguiente) dias[dia] = siguiente; else delete dias[dia];
               return { ...prev, [inv]: { ...fila, dias } };
             });
-            
             guardarPredictivo(equipo, { dia, valor: siguiente }).catch(err => {
               setPredDatos(previo);
               if (esAccesoDenegado(err)) { cerrarSesion(); return; }
@@ -1943,8 +2098,7 @@
             const diasPred = diasProgramados(predMes, predFrecuencia);
             const etiquetaMes = (NOMBRES_MESES_LARGOS[(mesP || 1) - 1] || '') + ' ' + (anioP || '');
             const bloquesDias = [];
-            // Agrupación de 10 días para formato vertical (Portrait)
-            for (let i = 0; i < diasPred.length; i += 10) bloquesDias.push(diasPred.slice(i, i + 10));
+            for (let i = 0; i < diasPred.length; i += 16) bloquesDias.push(diasPred.slice(i, i + 16));
 
             const marcaDe = (inv, d) => ((predDatos[inv] || {}).dias || {})[d] || '';
             const totalMarcas = equiposPredictivos.reduce((acc, eq) =>
@@ -1969,6 +2123,7 @@
                   </div>
                 </div>
 
+                {/* Controles */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap items-center gap-4 print-hidden">
                   <div className="flex items-center gap-2">
                     <label className="text-xs font-bold text-gray-500 uppercase">Mes:</label>
@@ -2000,6 +2155,7 @@
                   </div>
                 </div>
 
+                {/* Tabla interactiva (pantalla) */}
                 {!predArea ? (
                   <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center text-gray-400 print-hidden">
                     <i className="fas fa-map-marker-alt text-5xl text-gray-200 mb-4"></i>
@@ -2102,7 +2258,7 @@
                         <table className="tabla-formato">
                           <thead>
                             <tr>
-                              <th style={{width: '20%'}}>Equipo</th>
+                              <th style={{width: '22%'}}>Equipo</th>
                               <th style={{width: '12%'}}>Marca</th>
                               <th style={{width: '12%'}}>Modelo</th>
                               <th style={{width: '12%'}}>Serie</th>
@@ -2126,39 +2282,35 @@
                         </table>
 
                         {/* Registro de Revisión (firmas por día del bloque) */}
-                        <div style={{ pageBreakInside: 'avoid' }}>
-                            <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '11px', margin: '15px 0 5px'}}>Registro de Revisión (Firmas)</p>
-                            <table className="tabla-formato" style={{width: '100%'}}>
-                              <thead>
-                                <tr><th style={{width: '20%', padding: '6px'}}>DÍA</th><th style={{width: '40%'}}>RESPONSABLE DEL ÁREA</th><th style={{width: '40%'}}>INGENIERÍA BIOMÉDICA</th></tr>
-                              </thead>
-                              <tbody>
-                                {bloque.map(d => (
-                                  <tr key={d}>
-                                    <td className="centro" style={{padding: '10px'}}>{String(d).padStart(2, '0')}/{String(mesP).padStart(2, '0')}/{anioP}</td>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                        </div>
+                        <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '10px', margin: '10px 0 3px'}}>Registro de Revisión</p>
+                        <table className="tabla-formato" style={{width: '60%'}}>
+                          <thead>
+                            <tr><th style={{width: '30%'}}>DÍA</th><th style={{width: '35%'}}>ÁREA</th><th style={{width: '35%'}}>BIOMÉDICA</th></tr>
+                          </thead>
+                          <tbody>
+                            {bloque.map(d => (
+                              <tr key={d}>
+                                <td className="centro">{String(d).padStart(2, '0')}/{String(mesP).padStart(2, '0')}/{anioP}</td>
+                                <td>&nbsp;</td>
+                                <td>&nbsp;</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
 
                         {/* Observaciones */}
-                        <div style={{ pageBreakInside: 'avoid' }}>
-                            <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '11px', margin: '15px 0 5px'}}>Observaciones Generales</p>
-                            <div style={{border: '1px solid #000', minHeight: '80px', padding: '6px', fontFamily: 'Arial', fontSize: '10px'}}>
-                              {equiposPredictivos
-                                .filter(eq => ((predDatos[eq.numeroInventario] || {}).obs || '').trim() !== '')
-                                .map(eq => (
-                                  <p key={eq.id} style={{margin: '0 0 4px'}}>
-                                    <strong>{eq.nombre} ({eq.numeroInventario}):</strong> {(predDatos[eq.numeroInventario] || {}).obs}
-                                  </p>
-                                ))}
-                            </div>
+                        <p style={{fontFamily: 'Arial', fontWeight: 700, fontSize: '10px', margin: '10px 0 3px'}}>Observaciones</p>
+                        <div style={{border: '1px solid #000', minHeight: '70px', padding: '4px', fontFamily: 'Arial', fontSize: '9px'}}>
+                          {equiposPredictivos
+                            .filter(eq => ((predDatos[eq.numeroInventario] || {}).obs || '').trim() !== '')
+                            .map(eq => (
+                              <p key={eq.id} style={{margin: '0 0 2px'}}>
+                                <strong>{eq.nombre} ({eq.numeroInventario}):</strong> {(predDatos[eq.numeroInventario] || {}).obs}
+                              </p>
+                            ))}
                         </div>
 
-                        <div className="leyenda-controlado" style={{ marginTop: '15px' }}>DOCUMENTO CONTROLADO. PROHIBIDA SU REPRODUCCIÓN PARCIAL O TOTAL NO AUTORIZADA</div>
+                        <div className="leyenda-controlado">DOCUMENTO CONTROLADO. PROHIBIDA SU REPRODUCCIÓN PARCIAL O TOTAL NO AUTORIZADA</div>
                       </div>
                     ))}
                   </div>
@@ -2215,6 +2367,8 @@
                           </div>
                       </div>
 
+                      {/* [REV-09] Membrete institucional: solo visible al imprimir.
+                          EQUIPO y ÁREA se actualizan según lo que se mande a imprimir. */}
                       <div className="hidden print-block p-4 text-slate-800">
                           <MembreteHSAIP
                               titulo="Programa Anual de Mantenimiento Preventivo"
@@ -2249,6 +2403,7 @@
                                           const historialString = equipo.historialEjecuciones || "";
                                           const ejecutadosArr = limpiarHistorial(historialString);
                                           
+                                          // Variable para verificar si el equipo está fuera de servicio
                                           const isFueraServicio = estaFueraServicio(equipo);
 
                                           const celdas = [0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
@@ -2264,9 +2419,9 @@
                                                   cellClass += "celda-ejec ";
                                               } else if (isProgramado) {
                                                   if (isFueraServicio) {
-                                                      cellClass += "celda-fuera-servicio ";
+                                                      cellClass += "celda-fuera-servicio "; // PINTAR DE ROJO
                                                   } else {
-                                                      cellClass += "celda-prog "; 
+                                                      cellClass += "celda-prog "; // PINTAR DE AZUL
                                                   }
                                               } else {
                                                   cellClass += "bg-white ";
@@ -2407,6 +2562,9 @@
             if (selectedEquipo) {
               const freqText = frecuenciasOptions.find(f => f.id === selectedEquipo.frecuenciaMantenimiento)?.label || 'No asignada';
               
+              // ==============================================================================
+              // LÓGICA DE JOTFORM (BOTÓN GENERAR OS)
+              // ==============================================================================
               const handleJotformRedirect = () => {
                   const formUrl = "https://form.jotform.com/253464903173862";
                   const params = new URLSearchParams({
@@ -2485,10 +2643,12 @@
                       <div className="border-b border-gray-100 pb-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Fecha Alta</p><p className="font-medium">{selectedEquipo.fechaAlta ? selectedEquipo.fechaAlta.split('T')[0] : '-'}</p></div>
                       <div className="lg:col-span-3 mt-4"><p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Descripción Detallada</p><p className="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap leading-relaxed shadow-inner">{selectedEquipo.descripcion || 'Sin descripción detallada registrada para este equipo.'}</p></div>
 
+                      {/* [NEW-14] EXPEDIENTE DIGITAL: historial de mantenimientos desde Drive */}
                       <div className="lg:col-span-3 mt-6 pt-6 border-t-2 border-dashed border-gray-200">
                         <ExpedienteEquipo equipo={selectedEquipo} />
                       </div>
 
+                      {/* ETIQUETA DE IDENTIFICACIÓN */}
                       <div className="lg:col-span-3 mt-6 pt-6 border-t-2 border-dashed border-gray-200">
                         <EtiquetaEquipo equipo={selectedEquipo} />
                       </div>
@@ -2581,6 +2741,8 @@
             );
           };
 
+          // [SEC] Sin sesión válida no se renderiza nada del CMMS ni se pide
+          // información al backend: primero la pantalla de acceso.
           if (!usuarioActivo) {
             return (
               <PantallaAcceso onAcceso={(pin, usuario) => {
@@ -2608,6 +2770,7 @@
                   <button onClick={() => {setActiveTab('predictivos'); setSelectedEquipo(null);}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'predictivos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-clipboard-check w-5 text-center"></i> Predictivos</button>
                 </nav>
 
+                {/* [SEC] Sesión activa: nombre resuelto por el backend + salida */}
                 <div className="p-4 border-t border-slate-800 flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Sesión</p>
@@ -2631,6 +2794,7 @@
                 </div>
               </main>
 
+              {/* Modal Agregar Equipo */}
               {showAddEquipo && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 text-slate-800">
                   <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
