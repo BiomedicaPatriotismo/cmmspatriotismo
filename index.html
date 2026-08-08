@@ -105,6 +105,52 @@
             .print-hidden { display: none !important; }
             .print-block { display: block !important; }
             main { padding: 0 !important; margin: 0 !important; }
+
+            /* ============================================================
+               [FIX-PRINT] Barras de desplazamiento en la vista de impresión
+               ------------------------------------------------------------
+               Los contenedores con overflow-auto (main, el wrapper de la
+               tabla del calendario, las tablas con max-h-*) se imprimen
+               como "cajas con scroll": el navegador dibuja la barra lateral
+               y RECORTA todo lo que no cabe en la pantalla. Al imprimir hay
+               que devolverlos a flujo normal para que la tabla completa se
+               reparta entre las páginas.
+               ============================================================ */
+            html, body {
+                overflow: visible !important;
+                height: auto !important;
+                min-height: 0 !important;
+            }
+            main,
+            aside,
+            .overflow-auto, .overflow-x-auto, .overflow-y-auto,
+            .overflow-hidden, .overflow-x-hidden, .overflow-y-hidden,
+            .overflow-scroll, .overflow-x-scroll, .overflow-y-scroll,
+            .dark-scroll {
+                overflow: visible !important;
+                max-height: none !important;
+                height: auto !important;
+            }
+            /* Tailwind aplica las alturas máximas con clases arbitrarias
+               (max-h-80, max-h-[65vh], max-h-[32rem], max-h-[90vh]).      */
+            [class*="max-h-"] { max-height: none !important; }
+            [class*="min-h-"] { min-height: 0 !important; }
+
+            /* Oculta la barra de desplazamiento incluso si algún contenedor
+               conserva overflow por estilo en línea.                       */
+            * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+            *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+
+            /* Sin la barra lateral, el contenedor flex ya no aporta nada y en
+               algunos navegadores impide que el contenido se reparta entre
+               páginas. Se devuelve a flujo de bloque a ancho completo.        */
+            body > #root > div { display: block !important; }
+            main > div { height: auto !important; max-width: none !important; }
+            .max-w-7xl { max-width: none !important; }
+
+            /* La tabla del calendario no debe partir filas a la mitad */
+            .tabla-cal tr, .tabla-cal thead { page-break-inside: avoid !important; break-inside: avoid !important; }
+            .tabla-cal thead { display: table-header-group !important; }
             
             /* Ajustes del CMMS */
             .bg-slate-50 { background-color: white !important; }
@@ -453,6 +499,28 @@
                 document.body.appendChild(script);
             });
         };
+
+        // ====================================================================
+        // [FIX-22] ESCRITURAS SIN REINTENTOS CIEGOS
+        // --------------------------------------------------------------------
+        // jsonpConReintentos vuelve a lanzar la MISMA petición hasta 3 veces.
+        // En una lectura eso es inofensivo, pero en un alta o en la bitácora
+        // (appendRow) cada reintento agrega OTRA fila: si el servidor sí
+        // escribió y solo se perdió la respuesta, terminas con el equipo
+        // duplicado con folios consecutivos.
+        //
+        // Las escrituras que AGREGAN filas usan esta función: un solo intento
+        // y un margen de espera mayor, porque el alta tiene que leer la hoja
+        // completa para calcular el folio dentro del LockService.
+        //
+        // Las escrituras IDEMPOTENTES (edit = setValues sobre una fila fija,
+        // predictivo = upsert de una celda) sí pueden seguir reintentando.
+        // ====================================================================
+        const jsonpEscrituraUnica = (params) => jsonpRequest(params, 60000);
+
+        /** Identificador de intento: permite al backend reconocer un reenvío. */
+        const nuevaReferencia = () =>
+            'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
         // Reintentos con espera progresiva: absorbe cuotas y cortes de red del hospital
         const jsonpConReintentos = async (params, intentos = 3) => {
@@ -1556,6 +1624,12 @@
             try { window.localStorage.setItem('cmms_tecnico', tecnicoActivo); } catch (e) {}
           }, [tecnicoActivo]);
           const [showAddEquipo, setShowAddEquipo] = useState(false);
+          // [FIX-23] Error del alta: se pinta DENTRO del modal. Antes se mandaba
+          // a syncError, que se dibuja en el cuerpo de la página y quedaba tapado
+          // por el propio modal (fixed inset-0 z-50): el usuario no veía nada.
+          const [errorAlta, setErrorAlta] = useState(null);
+          // [FIX-24] Referencia del intento de alta en curso (anti-duplicados).
+          const refAlta = useRef(null);
           
           const [searchTerm, setSearchTerm] = useState('');
           const [filterEstatus, setFilterEstatus] = useState('Todos');
@@ -1763,24 +1837,37 @@
 
             // Validación previa: evita altas incompletas en el inventario.
             // [NEW-09] Ya no se valida numeroInventario aquí: lo asigna el servidor.
+            // [FIX-23] Los mensajes van a errorAlta, que SÍ se ve dentro del modal.
             if (!nuevoEquipo.nombre || !nuevoEquipo.ubicacion) {
-              setSyncError('El nombre del equipo y el área/ubicación son obligatorios.');
+              setErrorAlta('El nombre del equipo y el área/ubicación son obligatorios.');
               return;
             }
             if (!nuevoEquipo.nivelRiesgo) {
-              setSyncError('Selecciona un nivel de riesgo (I, II o III).');
+              setErrorAlta('Selecciona un nivel de riesgo (I, II o III).');
               return;
             }
 
+            // [FIX-24] Una referencia por alta. Si el usuario reintenta tras un
+            // error de red, viaja la MISMA referencia y el backend devuelve el
+            // resultado original en lugar de agregar el equipo otra vez.
+            if (!refAlta.current) refAlta.current = nuevaReferencia();
+
             setIsSyncing(true);
+            setErrorAlta(null);
             setSyncError(null);
             try {
               // [NEW-09] El backend calcula el folio real (PAT/CPAT/RPAT + consecutivo)
               // de forma atómica y lo regresa en la respuesta; esto evita folios
               // duplicados si dos personas dan de alta equipo al mismo tiempo.
-              const resultado = await jsonpConReintentos({
+              // [FIX-22] Sin reintentos automáticos: un appendRow repetido duplica el equipo.
+              const resultado = await jsonpEscrituraUnica({
                 action: 'save',
-                payload: JSON.stringify({ action: 'add', data: nuevoEquipo, sheetName: nuevoEquipo.origen })
+                payload: JSON.stringify({
+                  action: 'add',
+                  data: nuevoEquipo,
+                  sheetName: nuevoEquipo.origen,
+                  clientRef: refAlta.current
+                })
               });
               const folioAsignado = resultado.numeroInventario || siguienteFolioPreview;
               const matchNum = String(folioAsignado).match(/(\d+)\s*$/);
@@ -1793,12 +1880,57 @@
               setEquipos([...equipos, equipoGuardar]);
               setShowAddEquipo(false);
               setNuevoEquipo(estadoInicialEquipo);
+              setErrorAlta(null);
+              refAlta.current = null;          // el siguiente alta usa una referencia nueva
               setUltimaSync(new Date().toLocaleString('es-MX'));
             } catch (error) {
-              setSyncError('No se pudo dar de alta el equipo: ' + error.message);
+              // [FIX-25] Sesión expirada: mismo trato que en el resto de la app
+              if (esAccesoDenegado(error)) {
+                setShowAddEquipo(false);
+                refAlta.current = null;
+                cerrarSesion();
+                return;
+              }
+              setErrorAlta(mensajeAmigable(error));
             } finally {
               setIsSyncing(false);
             }
+          };
+
+          /**
+           * [FIX-26] Traduce los errores técnicos a algo accionable. El texto
+           * original se conserva al final para no perder información al
+           * momento de reportar la falla.
+           */
+          const mensajeAmigable = (error) => {
+            const msg = String((error && error.message) || error || '');
+            const b = msg.toLowerCase();
+
+            if (b.indexOf('permiso') > -1 || b.indexOf('permission') > -1) {
+              return 'El script no tiene permiso de escritura sobre la hoja de cálculo. ' +
+                     'Revisa que la cuenta que ejecuta el Apps Script sea Editor del libro ' +
+                     'y que la hoja no tenga rangos protegidos. (' + msg + ')';
+            }
+            if (b.indexOf('tiempo de espera') > -1 || b.indexOf('timeout') > -1) {
+              return 'El servidor tardó demasiado en responder. El equipo PUEDE haberse guardado: ' +
+                     'sincroniza antes de volver a intentar. Si vuelves a presionar Guardar, ' +
+                     'el sistema reconoce el reenvío y no lo duplica.';
+            }
+            if (b.indexOf('sistema ocupado') > -1) {
+              return 'Otra persona está guardando en este momento. Espera unos segundos y vuelve a intentar.';
+            }
+            if (b.indexOf('hoja no encontrada') > -1) {
+              return 'No existe la hoja destino en el libro. Verifica que se llamen exactamente ' +
+                     'Propio, Comodato y Renta. (' + msg + ')';
+            }
+            if (b.indexOf('spreadsheet_id') > -1) {
+              return 'Falta configurar SPREADSHEET_ID en Codigo.gs. (' + msg + ')';
+            }
+            if (b.indexOf('no se pudo contactar') > -1) {
+              return 'No hubo respuesta del backend. Revisa la URL de implementación y que el ' +
+                     'despliegue esté como "Ejecutar como: Yo" y "Acceso: Cualquier usuario".';
+            }
+            return msg || 'Error desconocido.';
           };
 
           const toggleMantenimientoEjecutado = (equipo, monthIndex, year) => {
@@ -1819,7 +1951,9 @@
               directSaveToSheets(updatedEquipo, estadoPrevio).then(ok => {
                 // [NEW-07] Al marcar ejecutado, levanta folio en bitácora
                 if (ok && ejecutando) {
-                  jsonpConReintentos({
+                  // [FIX-22] La bitácora también hace appendRow con folio nuevo:
+                  // reintentar generaría MP-2026-0001, -0002 y -0003 del mismo evento.
+                  jsonpEscrituraUnica({
                     action: 'save',
                     payload: JSON.stringify({
                       action: 'bitacora',
@@ -2665,7 +2799,7 @@
                   <h2 className="text-2xl font-bold flex items-center gap-2"><i className="fas fa-stethoscope text-blue-600"></i> Hojas de Inventario</h2>
                   <div className="flex flex-wrap items-center gap-2">
                     <button onClick={handleSyncSheets} disabled={isSyncing} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm"><i className={`fas fa-sync-alt ${isSyncing ? "fa-spin" : ""}`}></i> {isSyncing ? 'Sincronizando...' : 'Sincronizar Sheets'}</button>
-                    <button onClick={() => { setNuevoEquipo({...estadoInicialEquipo, origen: inventarioTab}); setShowAddEquipo(true); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm"><i className="fas fa-plus"></i> Agregar Equipo</button>
+                    <button onClick={() => { setNuevoEquipo({...estadoInicialEquipo, origen: inventarioTab}); setErrorAlta(null); refAlta.current = null; setShowAddEquipo(true); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium text-sm"><i className="fas fa-plus"></i> Agregar Equipo</button>
                   </div>
                 </div>
 
@@ -2800,9 +2934,24 @@
                   <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
                     <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-blue-50">
                       <div><h3 className="text-lg font-bold">Registrar Nuevo Equipo</h3><p className="text-xs text-blue-600 font-medium mt-1 flex items-center gap-1"><i className="fas fa-database"></i> Se guardará en la hoja: <strong>{nuevoEquipo.origen}</strong></p></div>
-                      <button onClick={() => setShowAddEquipo(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+                      <button onClick={() => { setShowAddEquipo(false); setErrorAlta(null); refAlta.current = null; }} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
                     </div>
-                    
+
+                    {/* [FIX-23] Banner de error DENTRO del modal. Antes el mensaje
+                        se pintaba detrás del overlay y parecía que el botón
+                        "Guardar y Sincronizar" no hacía nada. */}
+                    {errorAlta && (
+                      <div className="mx-6 mt-4 bg-red-50 border-l-4 border-red-500 p-4 rounded-lg flex items-start gap-3">
+                        <i className="fas fa-triangle-exclamation text-red-600 mt-0.5"></i>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-red-800 text-sm">No se pudo dar de alta el equipo</p>
+                          <p className="text-red-700 text-sm mt-1 break-words">{errorAlta}</p>
+                        </div>
+                        <button type="button" onClick={() => setErrorAlta(null)}
+                          className="text-red-400 hover:text-red-600 font-bold px-2">✕</button>
+                      </div>
+                    )}
+
                     <form onSubmit={handleAddEquipo} className="p-6 overflow-y-auto flex-1">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div className="lg:col-span-3 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2 flex flex-col md:flex-row md:items-end gap-3">
@@ -2842,7 +2991,7 @@
                         <div className="lg:col-span-3"><label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label><textarea value={nuevoEquipo.descripcion} onChange={(e) => setNuevoEquipo({...nuevoEquipo, descripcion: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3"></textarea></div>
                       </div>
                       <div className="pt-6 mt-6 border-t border-gray-100 flex gap-3 justify-end">
-                        <button type="button" onClick={() => setShowAddEquipo(false)} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
+                        <button type="button" onClick={() => { setShowAddEquipo(false); setErrorAlta(null); refAlta.current = null; }} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">Cancelar</button>
                         <button disabled={isSyncing} type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
                           {isSyncing ? <i className="fas fa-sync-alt fa-spin"></i> : <i className="fas fa-save"></i>} {isSyncing ? 'Guardando...' : 'Guardar y Sincronizar'}
                         </button>
